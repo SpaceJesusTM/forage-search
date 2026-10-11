@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Forage local state: research data, databases, reports, logs
+data/
+/forage-data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Local configuration and credentials
+forage.toml
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Model files
+*.gguf
+*.safetensors
+*.bin
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/
+.claude/

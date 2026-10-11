@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forage-search"
+version = "0.1.0"
+description = "Forage: a standalone, local-first, persistent web-research agent"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.6",
+    "trafilatura>=2.0",
+    "lxml>=5.0",
+    "pypdf>=4.0",
+]
+
+[project.optional-dependencies]
+ddgs = ["ddgs>=9.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+forage = "forage.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+forage = ["storage/migrations/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -m 'not live'"
+markers = [
+    "live: uses the real local Ollama server and/or the public web (deselected by default)",
+]
