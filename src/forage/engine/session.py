@@ -455,8 +455,9 @@ class _Session:
             else:
                 score, note, out_of_scope = rating.score, rating.reason, rating.out_of_scope
             if out_of_scope:
-                self.c["out_of_scope_candidates"] += 1
-                self.out_of_scope.append({"title": cand["title"], "url": cand["canonical_url"], "reason": note, "score": score})
+                if score >= 1:  # relevant-looking but excluded: evidence of pressure on the approved scope
+                    self.c["out_of_scope_candidates"] += 1
+                    self.out_of_scope.append({"title": cand["title"], "url": cand["canonical_url"], "reason": note, "score": score})
                 self.store.update_source(cand["id"], status=SourceStatus.IRRELEVANT, relevance=score,
                                          triage_note=f"out of approved scope: {note}"[:300])
                 continue

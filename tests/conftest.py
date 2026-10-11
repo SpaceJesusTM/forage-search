@@ -56,9 +56,11 @@ class Harness:
         self.app.close()
         return self.open()
 
-    def watch(self, objective: str = OBJECTIVE, approve: bool = True, **spec) -> str:
+    def watch(self, objective: str = OBJECTIVE, approve: bool = True, policy: str = "continuous",
+              policy_config: dict | None = None, budget: dict | None = None, **spec) -> str:
         spec.setdefault("key_questions", QUESTIONS)
-        watch = self.app.watches.create(objective, spec=WatchSpec(**spec))
+        watch = self.app.watches.create(objective, spec=WatchSpec(**spec), policy=policy, policy_config=policy_config,
+                                        budget=budget)
         if approve:
             self.app.watches.approve(watch["id"])
         return watch["id"]

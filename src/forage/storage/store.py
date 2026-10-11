@@ -215,10 +215,10 @@ class Store(Database):
         if statuses:
             marks = ",".join("?" * len(statuses))
             return self._rows(
-                "source", f"SELECT * FROM source WHERE watch_id = ? AND status IN ({marks}) ORDER BY first_seen_at, id",
+                "source", f"SELECT * FROM source WHERE watch_id = ? AND status IN ({marks}) ORDER BY first_seen_at, rowid",
                 (watch_id, *statuses),
             )
-        return self._rows("source", "SELECT * FROM source WHERE watch_id = ? ORDER BY first_seen_at, id", (watch_id,))
+        return self._rows("source", "SELECT * FROM source WHERE watch_id = ? ORDER BY first_seen_at, rowid", (watch_id,))
 
     def add_snapshot(self, source_id: str, run_id: str, content_hash: str, text: str) -> tuple[int, bool]:
         """Store a content version. Return (snapshot_id, is_new_version)."""
@@ -245,7 +245,7 @@ class Store(Database):
         return self.one("SELECT * FROM finding WHERE id = ?", (finding_id,))
 
     def list_findings(self, watch_id: str) -> list[dict[str, Any]]:
-        return self.all("SELECT * FROM finding WHERE watch_id = ? ORDER BY first_seen_at, id", (watch_id,))
+        return self.all("SELECT * FROM finding WHERE watch_id = ? ORDER BY first_seen_at, rowid", (watch_id,))
 
     def create_finding(self, watch_id: str, run_id: str, title: str, subject: str, relevance: int | None,
                        uncertainty: str | None, seed: str) -> str:
@@ -291,7 +291,7 @@ class Store(Database):
                 clauses.append(f"{col} = ?")
                 params.append(str(val))
         where = " AND ".join(clauses) or "1 = 1"
-        return self.all(f"SELECT * FROM claim WHERE {where} ORDER BY checked_at, id", tuple(params))
+        return self.all(f"SELECT * FROM claim WHERE {where} ORDER BY checked_at, rowid", tuple(params))
 
     def record_change(self, run_id: str, watch_id: str, finding_id: str, change: ChangeType,
                       detail: dict[str, Any] | None = None) -> None:
@@ -335,11 +335,11 @@ class Store(Database):
     def list_questions(self, watch_id: str, status: str | None = None) -> list[dict[str, Any]]:
         if status:
             return self._rows(
-                "open_question", "SELECT * FROM open_question WHERE watch_id = ? AND status = ? ORDER BY created_at, id",
+                "open_question", "SELECT * FROM open_question WHERE watch_id = ? AND status = ? ORDER BY created_at, rowid",
                 (watch_id, status),
             )
         return self._rows(
-            "open_question", "SELECT * FROM open_question WHERE watch_id = ? ORDER BY created_at, id", (watch_id,)
+            "open_question", "SELECT * FROM open_question WHERE watch_id = ? ORDER BY created_at, rowid", (watch_id,)
         )
 
     def update_question(self, question_id: str, **values: Any) -> None:

@@ -22,7 +22,7 @@ from forage.storage.store import Store
 from forage.types import ChangeType, ClaimStatus, QuestionStatus, Verification
 from forage.util import normalize_text, parse_iso
 
-MAX_CLAIMS_PER_FINDING = 8
+MAX_CLAIMS_PER_FINDING = 12
 _REJECTION_TEXT = {
     "quote_not_found": "the quoted passage could not be found on the page",
     "number_not_in_source": "a number in the claim does not appear on the page",
@@ -73,7 +73,8 @@ def build_report(store: Store, run_id: str) -> ResearchReport:
         if change["change_type"] == ChangeType.STALE and not accepted:
             shown = store.list_claims(finding_id=row["id"], status=ClaimStatus.SUPERSEDED)
         new_ids = set(detail.get("new_claim_ids", [])) | set(detail.get("corroborating_claim_ids", []))
-        shown = sorted(shown, key=lambda c: (c["id"] not in new_ids, c["checked_at"]))[:MAX_CLAIMS_PER_FINDING]
+        ordered = sorted(shown, key=lambda c: (c["id"] not in new_ids, c["checked_at"]))
+        shown, hidden = ordered[:MAX_CLAIMS_PER_FINDING], max(0, len(ordered) - MAX_CLAIMS_PER_FINDING)
 
         claims, notes = [], []
         domains = {registrable_domain(sources[c["source_id"]]["domain"]) for c in accepted if c["source_id"] in sources}
@@ -114,7 +115,8 @@ def build_report(store: Store, run_id: str) -> ResearchReport:
         retired = [c["text"] for c in (store.get_claim(cid) for cid in detail.get("superseded_claim_ids", [])) if c]
         findings.append(ReportFinding(
             finding_id=row["id"], change_type=change["change_type"], title=row["title"], subject=row["subject"],
-            claims=claims, independent_sources=len(domains), uncertainties=list(dict.fromkeys(notes)),
+            claims=claims, claims_not_shown=hidden, independent_sources=len(domains),
+            uncertainties=list(dict.fromkeys(notes)),
             change_note=detail.get("note"), retired_claims=retired if accepted else [],
             first_seen_session=seq_by_run.get(row["first_seen_run_id"]),
             first_seen_at=row["first_seen_at"], last_confirmed_at=row["last_confirmed_at"],

@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Callable
 
-from forage.checkpoint.base import CheckpointContext, CheckpointDecision, get_policy
+from forage.checkpoint.base import CheckpointContext, CheckpointDecision, evaluate, get_policy
 from forage.config import Settings
 from forage.controller.reviews import ReviewController
 from forage.controller.watches import WatchController
@@ -134,7 +134,7 @@ class RunManager:
         assert watch is not None
         policy = get_policy(watch["checkpoint_policy"])
         context = CheckpointContext.load(self.store, watch, outcome)
-        decision = policy.evaluate(context)
+        decision = evaluate(policy, context)
         self.reviews.record_decision(watch_id, outcome.run_id, policy.name, decision)
         if decision.request_review and watch["status"] == WatchStatus.ACTIVE:
             self.reviews.open_request(watch_id, outcome.run_id, policy.name, decision)

@@ -41,7 +41,7 @@ ALLOWED_TRANSITIONS: frozenset[tuple[WatchStatus, WatchStatus]] = frozenset({
 # Only these statuses may be given research time.
 RESEARCHABLE = frozenset({S.ACTIVE})
 
-CHECKPOINT_POLICIES = ("continuous",)  # periodic and adaptive arrive with the checkpoint milestone
+CHECKPOINT_POLICIES = ("continuous", "periodic", "adaptive")
 
 
 class WatchError(Exception):
@@ -141,6 +141,14 @@ class WatchController:
             self.store.update("watch_revision", {"id": watch["pending_revision_id"]},
                               {"state": state, "decided_at": self.store.now(), "decided_by": actor})
 
+    def scope_changed(self, watch_id: str) -> int:
+        """After a new revision takes effect, results set aside only for being out of scope become leads again."""
+        return self.store.execute(
+            "UPDATE source SET status = 'DISCOVERED', relevance = MAX(relevance, 2), "
+            "triage_note = 'set aside under an earlier scope; to be re-read' "
+            "WHERE watch_id = ? AND status = 'IRRELEVANT' AND relevance >= 1 AND triage_note LIKE 'out of approved scope:%'",
+            (watch_id,)).rowcount
+
     def _cancel_running(self, watch_id: str) -> None:
         self.store.execute(
             "UPDATE session_run SET cancel_requested = 1 WHERE watch_id = ? AND status = ?", (watch_id, RunStatus.RUNNING))
@@ -229,6 +237,8 @@ class WatchController:
                               {"state": RevisionState.APPROVED, "decided_at": now, "decided_by": actor})
             values = {"active_revision_id": pending["id"], "pending_revision_id": None, "previous_status": None}
             detail = {"revision_id": pending["id"]}
+            if watch["active_revision_id"]:
+                detail["sources_reopened"] = self.scope_changed(watch["id"])
             if status is S.ACTIVE:
                 self.store.update("watch", {"id": watch["id"]}, {**values, "updated_at": now})
                 self.store.add_watch_event(watch["id"], "revision_approved", actor, status, status, detail)

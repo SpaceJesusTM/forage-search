@@ -114,3 +114,30 @@ def test_queue_commands_from_the_command_line(cli, monkeypatch):
     monkeypatch.setenv("FORAGE_SCHEDULER_AUTHORITY", "external")
     code, out = cli("queue", "run", "--ignore-window", "--quiet")
     assert code == 1 and "another controller owns scheduling" in out
+
+
+def test_review_flow_from_the_command_line(cli):
+    watch_id = _watch_id(cli("watch", "create", OBJECTIVE, "--no-llm", "--policy", "periodic", "--exclude", "wave energy")[1])
+    cli("watch", "approve", watch_id)
+    cli("watch", "policy", watch_id, "periodic", "--config", '{"every": 1}')
+    code, out = cli("run", watch_id, "--quiet")
+    assert code == 0 and "DECISION NEEDED" in out
+    assert "PENDING DECISION" in cli("watch", "show", watch_id)[1]
+
+    code, out = cli("review", "list")
+    request_id = out.split()[0]
+    assert code == 0 and "[PENDING]" in out and watch_id in out
+    code, out = cli("review", "show", request_id)
+    assert "Question:" in out and "continue" in out and "(default)" in out and "Why this needs you" in out
+
+    code, out = cli("review", "respond", request_id, "--choice", "continue", "--exclude", "tidal lagoons")
+    assert code == 2 and "would change the approved scope" in out and "Nothing was changed" in out
+    assert "AWAITING_REVIEW" in cli("watch", "show", watch_id)[1]
+
+    code, out = cli("review", "respond", request_id, "--choice", "continue", "--exclude", "tidal lagoons",
+                    "--confirm-scope-change", "--note", "lagoons are a different technology")
+    assert code == 0 and "ACTIVE" in out and "New approved revision" in out
+    shown = cli("watch", "show", watch_id, "--history")[1]
+    assert "tidal lagoons" in shown and "review_requested" in shown and "review_answered" in shown
+    assert "No pending reviews." in cli("review", "list")[1]
+    assert "[ANSWERED]" in cli("review", "list", "--all")[1]

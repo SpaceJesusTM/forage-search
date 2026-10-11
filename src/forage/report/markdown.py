@@ -48,6 +48,8 @@ def _finding(lines: list[str], finding: ReportFinding, sources_index: dict[str, 
         lines.append(f"  - {status}; checked {claim.checked_at}; {_link(claim.evidence_url)}")
         if claim.note:
             lines.append(f"  - Note: {md_text(claim.note, 240)}")
+    if finding.claims_not_shown:
+        lines.append(f"- ({finding.claims_not_shown} more verified claim(s) on record; see `forage findings --evidence`)")
     if finding.retired_claims:
         lines.append("")
         lines.append("No longer stated by the source (retired):")

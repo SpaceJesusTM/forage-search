@@ -34,6 +34,7 @@ class ReportFinding(BaseModel):
     title: str
     subject: str
     claims: list[ReportClaim]
+    claims_not_shown: int = Field(default=0, description="Further verified claims on record but omitted here for length")
     independent_sources: int = Field(description="Distinct registrable domains with a verified claim")
     uncertainties: list[str] = Field(default_factory=list)
     change_note: str | None = None

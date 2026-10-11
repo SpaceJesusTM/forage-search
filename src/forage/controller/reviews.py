@@ -133,6 +133,7 @@ class ReviewController:
                 self.store.update("watch_revision", {"id": active["id"]}, {"state": RevisionState.SUPERSEDED})
                 self.store.update("watch_revision", {"id": revision_id},
                                   {"state": RevisionState.APPROVED, "decided_at": now, "decided_by": actor})
+                self.watches.scope_changed(watch["id"])
             self.store.update("checkpoint_request", {"id": request["id"]}, {"status": "ANSWERED", "answered_at": now})
             extra = {"active_revision_id": revision_id} if revision_id else {}
             self.watches._transition(watch, target, actor, "review_answered",

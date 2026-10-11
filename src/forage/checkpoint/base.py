@@ -70,6 +70,7 @@ class CheckpointContext:
     out_of_scope: list[dict[str, Any]]
     reviews_answered: int
     last_review_signal: str | None
+    hard_limits: dict[str, Any] = field(default_factory=dict)  # user-set lifetime limits for the watch
 
     @classmethod
     def load(cls, store: Store, watch: dict[str, Any], outcome: SessionOutcome) -> "CheckpointContext":
@@ -77,9 +78,10 @@ class CheckpointContext:
         revision = store.get_revision(watch["active_revision_id"]) or {"objective": "", "spec": {}}
         completed = [r for r in store.list_runs(watch_id) if r["status"] == RunStatus.COMPLETED]
         last_answer = store.one(
-            "SELECT r.answered_at, r.signal FROM checkpoint_request r WHERE r.watch_id = ? AND r.status = 'ANSWERED' "
-            "ORDER BY r.answered_at DESC LIMIT 1", (watch_id,))
-        since = [r for r in completed if not last_answer or r["started_at"] >= last_answer["answered_at"]]
+            "SELECT r.signal, COALESCE(s.seq, 0) AS seq FROM checkpoint_request r LEFT JOIN session_run s ON s.id = r.run_id "
+            "WHERE r.watch_id = ? AND r.status = 'ANSWERED' ORDER BY r.rowid DESC LIMIT 1", (watch_id,))
+        # Sessions that started after the one which raised the last answered review.
+        since = [r for r in completed if not last_answer or r["seq"] > last_answer["seq"]]
         metrics = outcome.metrics or {}
         return cls(
             watch_id=watch_id,
@@ -96,6 +98,7 @@ class CheckpointContext:
             reviews_answered=int(store.scalar(
                 "SELECT COUNT(*) FROM checkpoint_request WHERE watch_id = ? AND status = 'ANSWERED'", (watch_id,)) or 0),
             last_review_signal=last_answer["signal"] if last_answer else None,
+            hard_limits={k: v for k, v in (watch.get("budget") or {}).items() if k.startswith("max_total_")},
         )
 
 
@@ -124,7 +127,46 @@ def standard_choices(extra: list[Choice] | None = None) -> list[Choice]:
     ]
 
 
+def hard_stop(context: CheckpointContext) -> CheckpointDecision | None:
+    """Gate shared by every policy: a user-set lifetime limit was reached.
+
+    It is deliberately outside the policies. A stop that all three conditions apply in the
+    same way must not be counted as a benefit of the adaptive policy; its signal name
+    starts with `common_` so analyses can exclude it.
+    """
+    limit = context.hard_limits.get("max_total_sessions")
+    if not limit or context.completed_sessions < int(limit):
+        return None
+    if context.sessions_since_review < 1:
+        return None
+    return CheckpointDecision(
+        action=REQUEST_REVIEW,
+        reason=f"lifetime limit of {limit} sessions reached",
+        signal="common_hard_limit",
+        signals={"completed_sessions": context.completed_sessions, "max_total_sessions": int(limit)},
+        what_happened=f"This watch has now run {context.completed_sessions} session(s), the limit you set for it.",
+        why_human="Spending beyond a limit you set needs your say-so.",
+        question="The session limit for this watch is reached. Continue anyway, pause or close it?",
+        choices=standard_choices(),
+        safe_default="pause",
+        urgency="normal",
+    )
+
+
+def evaluate(policy: CheckpointPolicy, context: CheckpointContext) -> CheckpointDecision:
+    """The decision for one completed session: the shared hard-stop gate first, then the policy."""
+    return hard_stop(context) or policy.evaluate(context)
+
+
 def get_policy(name: str) -> CheckpointPolicy:
     if name == "continuous":
         return ContinuousPolicy()
+    if name == "periodic":
+        from forage.checkpoint.periodic import PeriodicPolicy
+
+        return PeriodicPolicy()
+    if name == "adaptive":
+        from forage.checkpoint.adaptive import AdaptivePolicy
+
+        return AdaptivePolicy()
     raise ValueError(f"unknown checkpoint policy '{name}'")
