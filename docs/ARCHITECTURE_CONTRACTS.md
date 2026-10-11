@@ -1,4 +1,6 @@
-# Architecture and Contracts (Proposed, Not Yet Implemented)
+# Architecture and Contracts (Original Proposal)
+
+> Status note, 2026-10-11: a first implementation now exists. This file is kept as the original proposal. For the architecture as built, and where it differs from this proposal, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 The coding agent may choose the Python libraries and concrete modules. Preserve these **logical boundaries**:
 

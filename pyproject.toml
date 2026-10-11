@@ -14,6 +14,7 @@ dependencies = [
     "pydantic>=2.6",
     "trafilatura>=2.0",
     "lxml>=5.0",
+    "lxml_html_clean>=0.1",  # needed by trafilatura's justext dependency since lxml 5.2 split it out
     "pypdf>=4.0",
 ]
 

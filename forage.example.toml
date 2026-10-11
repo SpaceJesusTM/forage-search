@@ -1,0 +1,42 @@
+# Example Forage configuration. Copy to `forage.toml` (ignored by Git) and edit.
+# Every key can also be set as an environment variable: FORAGE_<KEY_IN_UPPER_CASE>.
+# Nothing here is a secret; do not put credentials in this file.
+
+# Where the database, reports and logs live. On the MSI, point this at the secondary SSD.
+data_dir = "data"
+
+# Local model server. Forage only reads from it; it never pulls or removes models.
+ollama_url = "http://127.0.0.1:11434"
+model = ""            # empty: the largest installed chat model under max_model_gb
+max_model_gb = 12.0
+num_ctx = 8192
+llm_think = false     # reasoning mode spent the whole output budget before answering in tests
+
+# Search. "duckduckgo" needs no key but throttles bursts. Chain fallbacks with "+",
+# for example "duckduckgo+ddgs" (needs `pip install forage-search[ddgs]`), or use a
+# SearXNG instance you run yourself: search_provider = "searxng" and set searxng_url.
+search_provider = "duckduckgo"
+search_min_interval_seconds = 12.0
+searxng_url = ""
+
+# Per-session budget (hard limits). Individual runs can override with CLI flags.
+max_duration_seconds = 900
+max_search_requests = 6
+max_fetched_pages = 8
+max_llm_output_tokens = 9000
+
+# Research behaviour.
+queries_per_session = 4
+max_per_domain_per_session = 3
+requery_after_hours = 20.0
+max_rechecks_per_session = 2
+support_check = true
+
+# Multi-watch runner. `forage queue night` admits sessions only inside this window.
+night_start = "02:00"
+night_end = "06:00"
+night_timezone = "America/Toronto"
+min_minutes_between_sessions = 60
+# Set to "external" when another controller (for example a future Tari bridge) owns
+# scheduling. The standalone queue runner then refuses to start.
+scheduler_authority = "standalone"

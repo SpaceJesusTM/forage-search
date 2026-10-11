@@ -33,7 +33,7 @@ Consequences for the design:
 | LLM | Ollama HTTP API via `httpx`, JSON-schema `format`, `think=false` | No SDK dependency; adapter is ~200 lines and replaceable |
 | Schemas | `pydantic` v2 | Validates LLM output and the report contract; emits JSON Schema |
 | Fetch | `httpx` with a connect-time address guard | Blocks private/loopback targets on every hop including redirects |
-| Extraction | `trafilatura` (HTML), `pypdf` (PDF) | Clean main-text extraction; bounded PDF support for papers |
+| Extraction | `trafilatura` (HTML, with `lxml_html_clean`), `pypdf` (PDF) | Clean main-text extraction; bounded PDF support for papers |
 | Search | Native DuckDuckGo-HTML provider; optional `ddgs` and SearXNG adapters; fixture provider for tests | No paid API in P0 |
 | CLI | stdlib `argparse` | No framework dependency |
 | Tests | `pytest` | Deterministic fixtures by default; live tests behind a marker |
@@ -122,11 +122,37 @@ Per-run structured logs of searches, LLM usage, findings, checkpoint decisions a
 | Process killed mid-run | Incremental commits; stale `RUNNING` runs marked `INTERRUPTED` on next start |
 | MSI differs from this host | No host-specific paths; model chosen at runtime; data directory configurable |
 
-## 6. Milestone status
+## 6. Milestone status (end of first implementation session, 2026-10-11)
 
-| Milestone | Status |
+| Milestone | Status | Verified by |
+| --- | --- | --- |
+| P0 single-watch research engine | Done | 219 deterministic tests; two live watches run for repeated sessions on the real web with the local model |
+| P1 multi-watch runner | Done | Deterministic tests for rotation, cursor persistence, window and DST, backoff, lease, shutdown; one bounded live three-session queue run. A real overnight run inside the window has **not** been done |
+| P2 checkpoint policies | Done | Deterministic tests for all three policies, gates, review responses and the one-waits-while-another-runs scenario; `periodic` exercised live once. `adaptive` has **not** fired on live data |
+| P3 evaluation support | Partly done | Export and a simulated three-policy harness with one built-in scenario. No repeats or seeds, no live pilot, no relevance rubric, no UI |
+
+Details, measured results and known defects are in `SESSION_HANDOFF.md`.
+
+## 7. Changes made to this plan during implementation
+
+Each of these came from running the system, not from the original design.
+
+| Finding | Change |
 | --- | --- |
-| P0 | In progress |
-| P1 | Not started |
-| P2 | Not started |
-| P3 | Not started |
+| A page of generic prompt-engineering advice passed triage and filled a report with tangential claims | The claim audit now also judges bearing on the objective (direct / background / none) and drops everything that is not direct; triage prefers primary and data-bearing sources |
+| The model quoted two cells of a table row; the cells were not adjacent in the page text, so a true claim was rejected | Table-cell quotes are matched against a single row and stored with the table header |
+| A claim named a model the quote did not mention | Names and numbers are checked against the page; those found only outside the quote cap the claim at "partly supported" with a note |
+| Related findings from different sources were never merged because wording differed | Filing is one model call per page over lexically shortlisted candidates, plus a deterministic shortcut when a claim restates one on record |
+| One query used the whole page budget | The page budget is spread across the remaining queries; unread relevant results become leads for the next session |
+| Reflection output was truncated before reaching "next directions" | Schema fields are ordered so essentials are generated first, and list lengths are capped in the grammar |
+| Official-source research was throttled by a two-pages-per-site cap | Cap raised to three; sites the user named are exempt |
+| By the third session, narrow model-written questions made the extractor judge relevant pages irrelevant | The user's standing questions always lead the extraction focus |
+| In a simulated five-night run, watches ran out of distinct queries and went idle | Searches may be run again after `requery_after_hours`; within the interval repeats are still rejected |
+| Budget "limit reached" flags depended on whether a gate happened to be asked | Flags are computed from counters, measured before the wrap-up phase |
+| Timestamp ties were broken by hash-derived ids, so identical inputs could order differently | Ties break on insertion order; a test compares full traces across policies |
+| A clean-environment install failed every session: `trafilatura` needs `lxml_html_clean`, which the development environment had only by accident | Declared as a dependency; the suite and the offline demo were re-run in a fresh environment |
+| Output speed fell from about 28 to about 9 tokens per second during sustained runs on the fanless development laptop | Per-call timing from the model server is stored; budgets are time-bounded regardless |
+
+## 8. Next safe steps
+
+See section 9 and 10 of `SESSION_HANDOFF.md`.
