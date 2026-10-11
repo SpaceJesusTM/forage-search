@@ -72,7 +72,8 @@ def test_periodic_policy_requests_review_at_fixed_intervals(harness):
     request = harness.app.reviews.pending_for(watch_id)
     assert request["policy"] == "periodic" and request["signal"] == "periodic_interval" and request["run_id"] == second.run_id
     assert "2 session(s) have run since the last review" in request["what_happened"]
-    assert [c["id"] for c in request["choices"]] == ["continue", "pause", "close"] and request["safe_default"] == "continue"
+    assert [c["id"] for c in request["choices"]] == ["continue", "amend", "pause", "close"]
+    assert request["safe_default"] == "continue"
     assert [e["run_id"] for e in request["evidence"]] == [first.run_id, second.run_id]
 
     with pytest.raises(RunRefused, match="AWAITING_REVIEW"):
@@ -218,6 +219,8 @@ def test_invalid_review_answers_are_refused(harness):
     request = harness.app.reviews.pending_for(watch_id)
     with pytest.raises(WatchError, match="not one of the choices"):
         harness.app.reviews.respond(request["id"], "broaden-everything")
+    with pytest.raises(WatchError, match="the change must be stated"):
+        harness.app.reviews.respond(request["id"], "amend", confirm_scope_change=True)
     assert status(harness, watch_id) == WatchStatus.AWAITING_REVIEW
 
 

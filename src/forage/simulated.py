@@ -70,7 +70,8 @@ class SimulatedWeb:
             overlap = len(wanted & haystack)
             if overlap:
                 scored.append((overlap / (len(wanted) or 1), view))
-        scored.sort(key=lambda pair: (-pair[0], pair[1]["url"]))
+        # Equal matches are ordered newest first, as a real engine would tend to surface fresh pages.
+        scored.sort(key=lambda pair: (-pair[0], -int(pair[1].get("from_epoch", 0)), pair[1]["url"]))
         return [
             SearchResult(rank=i + 1, url=view["url"], title=view.get("title", ""), snippet=view.get("snippet", ""))
             for i, (_, view) in enumerate(scored[:max_results])

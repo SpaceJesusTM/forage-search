@@ -556,6 +556,33 @@ def cmd_queue(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace, settings: Settings) -> int:
+    from pathlib import Path
+
+    from forage.eval.export import export_all
+
+    summary = export_all(_store(settings), Path(args.out), include_text=args.include_text)
+    _out(f"Wrote {len(summary['row_counts'])} tables and summary.json to {args.out}")
+    for watch in summary["watches"]:
+        _out(f"  {watch['watch_id']}: {watch['sessions']} sessions, {watch['search_requests']} searches, "
+             f"{watch['findings_total']} findings, {watch['claims_verified']} verified claims, "
+             f"{watch['reviews_requested']} reviews")
+    return 0
+
+
+def cmd_experiment(args: argparse.Namespace, settings: Settings) -> int:
+    from pathlib import Path
+
+    from forage.eval.experiment import POLICIES, render_comparison, run_experiment
+    from forage.eval.scenarios import load_scenario
+
+    policies = tuple(p.strip() for p in args.policies.split(",")) if args.policies else POLICIES
+    summary = run_experiment(load_scenario(args.scenario), Path(args.out), policies)
+    _out(render_comparison(summary))
+    _out(f"Full results, per-policy databases and exports are under {args.out}")
+    return 0
+
+
 # ------------------------------------------------------------------ parser
 
 
@@ -679,6 +706,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--wait", action="store_true", help="if the window has not opened yet, wait for it")
     p.add_argument("--quiet", action="store_true")
     p.set_defaults(func=cmd_queue, action="night")
+    p = sub.add_parser("export", help="export logs and metrics as JSONL for analysis")
+    p.add_argument("--out", required=True, help="directory to write into")
+    p.add_argument("--include-text", action="store_true", help="also export stored page text and report bodies")
+    p.set_defaults(func=cmd_export)
+    p = sub.add_parser("experiment", help="SIMULATED comparison of checkpoint policies on a replayable scenario")
+    p.add_argument("--scenario", default="three-watches", help="built-in scenario name or path to a scenario JSON file")
+    p.add_argument("--out", required=True, help="directory for per-policy databases, exports and the comparison")
+    p.add_argument("--policies", help="comma-separated subset of continuous,periodic,adaptive")
+    p.set_defaults(func=cmd_experiment)
     return parser
 
 

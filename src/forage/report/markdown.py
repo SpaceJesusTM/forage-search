@@ -179,7 +179,8 @@ def render_markdown(report: ResearchReport) -> str:
     else:
         add(f"- Started from {comparison.known_findings_before} known finding(s), {comparison.open_questions_before} open "
             f"question(s) and {comparison.queries_already_tried_before} earlier search(es) across {comparison.prior_sessions} prior session(s).")
-        add(f"- Searches repeated from earlier sessions: {comparison.queries_repeated}. "
+        add(f"- Searches repeated from recent sessions: {comparison.queries_repeated}. "
+            f"Older searches deliberately run again for newer results: {comparison.queries_rerun_after_interval}. "
             f"Proposed queries rejected as repeats: {comparison.queries_rejected_as_repeats}.")
         add(f"- Search results already visited and skipped: {comparison.known_urls_skipped}. "
             f"Saved leads followed up: {comparison.saved_leads_followed}. Sources re-checked: {comparison.sources_rechecked}.")

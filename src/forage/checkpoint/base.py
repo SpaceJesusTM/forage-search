@@ -118,10 +118,16 @@ class ContinuousPolicy:
 
 
 def standard_choices(extra: list[Choice] | None = None) -> list[Choice]:
-    """Choices every review offers, after any policy-specific ones."""
+    """Choices every review offers under every policy, with any policy-specific options in between.
+
+    The user can always change scope when asked, whichever policy raised the question; what
+    differs between policies is only when they ask.
+    """
     return [
         Choice("continue", "Continue with the current objective and scope", "continue"),
         *(extra or []),
+        Choice("amend", "Change the scope or priorities (state the change with --include, --exclude, "
+                        "--remove-exclude, --priority, --question or --notes)", "amend"),
         Choice("pause", "Pause this watch", "pause"),
         Choice("close", "Close this watch (history is kept)", "close"),
     ]

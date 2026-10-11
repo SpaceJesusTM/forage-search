@@ -117,6 +117,9 @@ class ReviewController:
         combined.update(patch or {})
         new_spec = apply_spec_patch(old_spec, combined) if combined else old_spec
         diff = spec_diff(old_spec, new_spec)
+        if choice["effect"] == "amend" and not diff:
+            raise WatchError("this choice changes the scope, so the change must be stated (for example --exclude or "
+                             "--remove-exclude); to carry on unchanged choose 'continue'")
         if diff and not confirm_scope_change:
             raise ConfirmationRequired(
                 "this answer changes the approved scope; repeat it with explicit confirmation to apply", diff)

@@ -56,6 +56,7 @@ class Settings:
     page_chars_per_call: int = 7000
     extract_calls_per_page: int = 1
     max_rechecks_per_session: int = 2
+    requery_after_hours: float = 20.0  # a search may be run again for newer results once this much time has passed
     support_check: bool = True
 
     # Scheduler

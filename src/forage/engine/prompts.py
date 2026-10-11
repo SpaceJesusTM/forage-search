@@ -55,7 +55,7 @@ def structure_watch(objective: str) -> tuple[str, str, dict[str, Any]]:
 def plan(*, objective: str, spec: WatchSpec, today: str, session_number: int, max_queries: int,
          known: list[dict[str, Any]], open_questions: list[dict[str, Any]], leads: list[str],
          tried: list[dict[str, Any]], rejected: list[str] | None = None,
-         last_session: str | None = None) -> tuple[str, str, dict[str, Any]]:
+         last_session: str | None = None, rerunnable: list[dict[str, Any]] | None = None) -> tuple[str, str, dict[str, Any]]:
     system = (
         "You plan web searches for a long-running research project. " + GUARD + "\n"
         f"Return {{\"queries\": [...]}} with at most {max_queries} entries. Each entry has:\n"
@@ -89,6 +89,10 @@ def plan(*, objective: str, spec: WatchSpec, today: str, session_number: int, ma
     if tried:
         parts.append("QUERIES ALREADY TRIED (do not repeat):\n" + "\n".join(
             f"- {one_line(t['query'], 120)} -> {t.get('outcome', '')}" for t in tried))
+    if rerunnable:
+        parts.append("OLDER SEARCHES THAT FOUND USEFUL FACTS (one may be run again, word for word, if newer results are likely):\n"
+                     + "\n".join(f"- {one_line(r['query'], 120)} (last run {r['last_run']}, {r['facts_kept']} facts kept)"
+                                 for r in rerunnable))
     if rejected:
         parts.append("REJECTED JUST NOW AS REPEATS (propose something different):\n" + "\n".join(f"- {r}" for r in rejected))
     parts.append(f"Propose up to {max_queries} new queries.")
@@ -136,7 +140,7 @@ def extract(*, objective: str, spec: WatchSpec, today: str, focus_questions: lis
         "- relevance: 3 = the page directly answers part of the objective; 2 = useful supporting facts; "
         "1 = only loosely related; 0 = nothing useful.\n"
         f"- items: at most {max_items}. One item is one specific thing the page describes: one opportunity, one event, "
-        "one method, one result, one organisation, or one answer to a focus question. Each item has:\n"
+        "one method, one result, one organisation, or one answer to a question of interest. Each item has:\n"
         "  - title: a specific name for the thing (not the page title unless they are the same).\n"
         "  - subject: the entity or topic it is about, in a few words.\n"
         f"  - claims: at most {max_claims}. Each claim has:\n"
@@ -147,7 +151,7 @@ def extract(*, objective: str, spec: WatchSpec, today: str, focus_questions: lis
         "  - uncertainty: a short note if the page is vague, undated, promotional, second-hand or possibly outdated; otherwise null.\n"
         "Rules:\n"
         "1. Use only what PAGE_TEXT says. No outside knowledge, no guesses, no inferred dates or numbers.\n"
-        "2. Extract only facts that directly help answer the objective or a focus question. Prefer measured results, "
+        "2. Extract only facts that directly help answer the objective or a question of interest. Prefer measured results, "
         "numbers, dates, named methods, named organisations and stated conditions. Skip generic advice, example "
         "prompts, instructions to the reader, marketing, navigation text and anything off-topic.\n"
         "3. The quote must itself contain the names, numbers and conditions that the claim states. If a fact is in a "
@@ -157,7 +161,8 @@ def extract(*, objective: str, spec: WatchSpec, today: str, focus_questions: lis
     )
     header = [f"TODAY: {today}", scope_lines(objective, spec)]
     if focus_questions:
-        header.append("FOCUS QUESTIONS:\n" + "\n".join(f"- {one_line(q, 200)}" for q in focus_questions))
+        header.append("QUESTIONS OF INTEREST (hints about what is wanted; any fact that serves the objective counts):\n"
+                      + "\n".join(f"- {one_line(q, 200)}" for q in focus_questions))
     header.append(f"PAGE TITLE: {one_line(title or 'unknown', 160)}\nPAGE SITE: {domain}\nPAGE DATE: {published or 'not stated'}")
     user = "\n\n".join(header + [data_block("PAGE_TEXT", text), "Extract the useful facts with exact quotes."])
     payload = {"objective": objective, "focus": focus_questions, "title": title, "text": text}

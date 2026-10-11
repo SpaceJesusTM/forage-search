@@ -93,7 +93,8 @@ class ReportComparison(BaseModel):
     open_questions_before: int = 0
     open_questions_after: int = 0
     queries_already_tried_before: int = 0
-    queries_repeated: int = 0
+    queries_repeated: int = Field(default=0, description="Searches identical to one run within the re-query interval")
+    queries_rerun_after_interval: int = Field(default=0, description="Earlier searches deliberately run again for newer results")
     queries_rejected_as_repeats: int = 0
     known_urls_skipped: int = 0
     saved_leads_followed: int = 0

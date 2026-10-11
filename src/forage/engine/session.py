@@ -229,7 +229,8 @@ class _Session:
             self.store.add_question(self.watch_id, self.objective, "SPEC")
         for hint in self.spec.source_hints:
             self._register_hint(hint)
-        self.memory = build_memory(self.store, self.watch_id, self.spec, self.e.clock())
+        self.memory = build_memory(self.store, self.watch_id, self.spec, self.e.clock(),
+                                   self.settings.requery_after_hours)
         self.findings = self.memory.findings
         self.focus = token_set(" ".join([self.objective, *self.spec.key_questions, *self.spec.include, *self.spec.priorities]))
         self.recall = self.memory.summary()  # what this session started from, before it adds anything
@@ -302,7 +303,7 @@ class _Session:
         memory = self.memory
         wanted = min(self.settings.queries_per_session, self.budget.budget.max_search_requests)
         open_ids = {q["id"] for q in memory.open_questions}
-        tried = list(memory.tried_queries)
+        tried = list(memory.recent_queries)  # older searches may be run again to look for newer results
         accepted: list[PlannedQuery] = []
         rejected: list[str] = []
 
@@ -328,7 +329,8 @@ class _Session:
                 objective=self.objective, spec=self.spec, today=self.today, session_number=memory.session_number,
                 max_queries=wanted, known=memory.known_for_planner(), open_questions=memory.questions_for_planner(),
                 leads=[lead["text"] for lead in memory.leads][:6], tried=memory.tried_for_planner,
-                rejected=extra_rejected, last_session=memory.last_session_at), Plan, 420)
+                rejected=extra_rejected, last_session=memory.last_session_at,
+                rerunnable=memory.rerunnable[:5]), Plan, 420)
             for candidate in (plan.queries if plan else []):
                 consider(candidate)
 
@@ -345,6 +347,12 @@ class _Session:
                 break
             consider(PlannedQuery(query=" ".join(tokenize(question["text"])[:8]),
                                   rationale="keywords of an open question", question_id=question["id"]))
+        # Searches that paid off before and are old enough to have newer results.
+        for entry in memory.rerunnable:
+            if len(accepted) >= wanted:
+                break
+            consider(PlannedQuery(query=entry["query"],
+                                  rationale=f"re-run of a productive search last run {entry['last_run']}, looking for newer results"))
         # Last resort, so a watch with nothing open still looks for developments: standing questions plus a recency cue.
         year = self.today[:4]
         for question in self.spec.key_questions or [self.objective]:
@@ -615,7 +623,12 @@ class _Session:
 
     def _extract_and_integrate(self, source: dict[str, Any], snapshot_id: int, result: FetchResult,
                                pre: tuple[str, list[int]], patterns: list[str]) -> None:
-        focus_questions = [q["text"] for q in (self.memory.questions_for_planner() if self.memory else [])][:5]
+        # The user's standing questions always lead. Open gaps are added as hints, never as a filter:
+        # narrow model-written questions alone made the extractor discard pages that served the objective.
+        standing = list(self.spec.key_questions[:4])
+        gaps = [q["text"] for q in (self.memory.questions_for_planner() if self.memory else [])
+                if q["text"] not in standing][:2]
+        focus_questions = standing + gaps
         focus = self.focus | token_set(source.get("discovered_via") or "")
         shown = result.text
         if patterns:
@@ -926,7 +939,7 @@ class _Session:
                 opened.append(question_id)
                 existing.append(text)
                 open_count += 1
-        tried = (self.memory.tried_queries if self.memory else []) + [
+        tried = (self.memory.recent_queries if self.memory else []) + [
             s["query"] for s in self.store.list_search_attempts(self.watch_id, self.run_id)]
         directions = []
         for direction in reflection.next_directions[:4]:

@@ -100,8 +100,7 @@ class AdaptivePolicy:
                 why_human=("Whether to widen the scope is your decision. The agent will not broaden an approved "
                            "objective on its own, and more searching inside the current scope cannot settle this."),
                 question="Results outside the approved scope keep appearing. Keep the scope as it is, or change it?",
-                choices=standard_choices([Choice(
-                    "amend", "Change the scope (state the change with --include / --exclude / --remove-exclude)", "amend")]),
+                choices=standard_choices(),
                 safe_default="continue", urgency="normal",
                 evidence=[{"title": ex.get("title"), "url": ex.get("url"), "why_excluded": ex.get("reason")} for ex in shown],
             )
@@ -140,8 +139,7 @@ class AdaptivePolicy:
                 why_human=("Further sessions on the same plan are unlikely to pay off. Whether to redirect the watch, "
                            "let it idle, or stop is a judgement about what you still want from it."),
                 question="This watch has stopped producing new findings. Continue as is, change direction, pause or close?",
-                choices=standard_choices([Choice(
-                    "amend", "Change direction (state the change with --question / --include / --notes)", "amend")]),
+                choices=standard_choices(),
                 safe_default="continue", urgency="low",
                 evidence=[{"session": r["seq"], "searches": _metrics(r).get("search_requests", 0),
                            "pages_read": _metrics(r).get("pages_read", 0),

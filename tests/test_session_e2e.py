@@ -101,7 +101,7 @@ def test_second_session_uses_prior_state_and_does_not_repeat(harness):
     known_after_first = len(harness.app.store.list_findings(watch_id))
 
     harness.web.epoch = 1  # two new pages appear on the simulated web
-    harness.clock.advance(days=1)
+    harness.clock.advance(hours=3)  # same day: inside the re-query interval
     second = harness.run(watch_id)
     report = harness.report(second.run_id)
     second_queries = [a["query"] for a in harness.app.store.list_search_attempts(watch_id, second.run_id)]
@@ -123,6 +123,32 @@ def test_second_session_uses_prior_state_and_does_not_repeat(harness):
     assert report["known_findings_total"] == known_after_first + 1
     first_titles = {f["title"] for f in harness.report(first.run_id)["findings"]}
     assert not set(titles(report, "NEW")) & first_titles
+
+
+def test_productive_searches_are_rerun_only_after_the_requery_interval(harness):
+    """Monitoring needs old searches again once enough time has passed; before that they are repeats."""
+    watch_id = harness.watch()
+    first = harness.run(watch_id)
+    first_queries = {normalize_text(a["query"]) for a in harness.app.store.list_search_attempts(watch_id, first.run_id)}
+
+    harness.clock.advance(hours=19)  # default interval is 20 hours
+    soon = harness.run(watch_id)
+    soon_queries = {normalize_text(a["query"]) for a in harness.app.store.list_search_attempts(watch_id, soon.run_id)}
+    assert not soon_queries & first_queries
+    assert harness.report(soon.run_id)["comparison"]["queries_rerun_after_interval"] == 0
+
+    harness.web.epoch = 1  # new pages have appeared by the next night
+    harness.clock.advance(hours=6)
+    later = harness.run(watch_id)
+    later_queries = {normalize_text(a["query"]) for a in harness.app.store.list_search_attempts(watch_id, later.run_id)}
+    rerun = later_queries & first_queries
+    assert rerun  # a search that produced kept facts is used again
+    comparison = harness.report(later.run_id)["comparison"]
+    assert comparison["queries_rerun_after_interval"] == len(rerun) and comparison["queries_repeated"] == 0
+    plan = next(e["data"] for e in harness.app.store.list_events(later.run_id) if e["kind"] == "plan")
+    assert any("re-run of a productive search" in q["rationale"] for q in plan["queries"])
+    assert later.metrics["findings_new"] >= 1  # and it is how the newly published page was found
+    assert later.metrics["duplicate_urls_skipped"] > 0  # while pages already read were not fetched again
 
 
 def test_corroboration_counts_independent_sites(harness):

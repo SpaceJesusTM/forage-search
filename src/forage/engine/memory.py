@@ -38,6 +38,8 @@ class Memory:
     findings: dict[str, FindingView]
     open_questions: list[dict[str, Any]]
     tried_queries: list[str]  # every query that actually reached a provider, oldest first
+    recent_queries: list[str]  # run within the re-query interval: must not be repeated yet
+    rerunnable: list[dict[str, Any]]  # older queries that produced kept facts, most productive first
     tried_for_planner: list[dict[str, Any]]
     leads: list[dict[str, Any]]
     backlog: list[dict[str, Any]]  # relevant sources discovered earlier but never read
@@ -57,6 +59,7 @@ class Memory:
             "known_findings": len(self.findings),
             "open_questions": len(self.open_questions),
             "queries_already_tried": len(self.tried_queries),
+            "queries_too_recent_to_repeat": len(self.recent_queries),
             "open_leads": len(self.leads),
             "unread_relevant_sources": len(self.backlog),
             "sources_due_for_recheck": len(self.recheck),
@@ -76,7 +79,7 @@ def load_findings(store: Store, watch_id: str) -> dict[str, FindingView]:
     return views
 
 
-def build_memory(store: Store, watch_id: str, spec: WatchSpec, now: datetime) -> Memory:
+def build_memory(store: Store, watch_id: str, spec: WatchSpec, now: datetime, requery_after_hours: float = 20.0) -> Memory:
     runs = store.list_runs(watch_id)
     prior = [r for r in runs if r["status"] != RunStatus.RUNNING]
     current = next((r for r in runs if r["status"] == RunStatus.RUNNING), None)
@@ -92,15 +95,25 @@ def build_memory(store: Store, watch_id: str, spec: WatchSpec, now: datetime) ->
 
     tried: list[str] = []
     tried_view: list[dict[str, Any]] = []
+    last_run: dict[str, tuple[datetime, str, int]] = {}  # normalised query -> (last run, text, facts kept)
+    cutoff = now - timedelta(hours=requery_after_hours)
     for attempt in store.list_search_attempts(watch_id):
         if attempt["status"] not in ("OK", "EMPTY"):
             continue  # throttled or failed queries never ran, so they may be tried again
         tried.append(attempt["query"])
+        kept = useful.get(attempt["query"], 0)
         if attempt["status"] == "EMPTY":
             outcome = "no results"
         else:
-            outcome = f"{attempt['result_count']} results, {attempt['new_url_count']} new pages, {useful.get(attempt['query'], 0)} facts kept"
+            outcome = f"{attempt['result_count']} results, {attempt['new_url_count']} new pages, {kept} facts kept"
         tried_view.append({"query": attempt["query"], "outcome": outcome})
+        last_run[attempt["query_norm"]] = (parse_iso(attempt["at"]), attempt["query"], kept)
+    # Repeating a search is pointless within the interval and necessary after it: new pages appear over time.
+    recent = [text for at, text, _ in last_run.values() if at > cutoff]
+    rerunnable = sorted(
+        ({"query": text, "facts_kept": kept, "last_run": at.strftime("%Y-%m-%d")}
+         for at, text, kept in last_run.values() if at <= cutoff and kept > 0),
+        key=lambda entry: -entry["facts_kept"])
 
     backlog = [
         s for s in store.list_sources(watch_id, [SourceStatus.DISCOVERED]) if (s["relevance"] or 0) >= 2
@@ -130,6 +143,8 @@ def build_memory(store: Store, watch_id: str, spec: WatchSpec, now: datetime) ->
         findings=load_findings(store, watch_id),
         open_questions=store.list_questions(watch_id, QuestionStatus.OPEN),
         tried_queries=tried,
+        recent_queries=recent,
+        rerunnable=rerunnable,
         tried_for_planner=tried_view[-MAX_TRIED_FOR_PLANNER:],
         leads=store.list_leads(watch_id, "OPEN"),
         backlog=backlog,

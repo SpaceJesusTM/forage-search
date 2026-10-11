@@ -42,7 +42,7 @@ def _question(row: dict[str, Any]) -> ReportQuestion:
     )
 
 
-def build_report(store: Store, run_id: str) -> ResearchReport:
+def build_report(store: Store, run_id: str, settings: Settings | None = None) -> ResearchReport:
     run = store.get_run(run_id)
     if run is None:
         raise ValueError(f"unknown run '{run_id}'")
@@ -157,11 +157,14 @@ def build_report(store: Store, run_id: str) -> ResearchReport:
 
     # -- comparison with the state this session started from --------------
     recall = next((e["data"] for e in events if e["kind"] == "recall"), None) or metrics.get("recall", {})
-    earlier_queries = {
-        normalize_text(a["query"]) for a in store.list_search_attempts(watch_id)
-        if a["run_id"] != run_id and a["status"] in ("OK", "EMPTY") and seq_by_run.get(a["run_id"], 0) < run["seq"]
-    }
+    earlier_queries: dict[str, str] = {}  # normalised query -> when it last ran before this session
+    for a in store.list_search_attempts(watch_id):
+        if a["run_id"] != run_id and a["status"] in ("OK", "EMPTY") and seq_by_run.get(a["run_id"], 0) < run["seq"]:
+            earlier_queries[normalize_text(a["query"])] = a["at"]
     ran_now = [normalize_text(a["query"]) for a in attempts if a["status"] in ("OK", "EMPTY")]
+    reused = [q for q in ran_now if q in earlier_queries]
+    interval = timedelta(hours=settings.requery_after_hours if settings else 20.0)
+    too_soon = [q for q in reused if started - parse_iso(earlier_queries[q]) < interval]
     previous = [r for r in store.list_runs(watch_id) if r["seq"] < run["seq"]]
     comparison = ReportComparison(
         previous_run_id=previous[-1]["id"] if previous else None,
@@ -171,7 +174,8 @@ def build_report(store: Store, run_id: str) -> ResearchReport:
         open_questions_before=recall.get("open_questions", 0),
         open_questions_after=recall.get("open_questions", 0) - len(answered) + len(opened),
         queries_already_tried_before=recall.get("queries_already_tried", 0),
-        queries_repeated=sum(1 for q in ran_now if q in earlier_queries),
+        queries_repeated=len(too_soon),
+        queries_rerun_after_interval=len(reused) - len(too_soon),
         queries_rejected_as_repeats=metrics.get("queries_rejected_as_repeats", 0),
         known_urls_skipped=metrics.get("duplicate_urls_skipped", 0),
         saved_leads_followed=metrics.get("backlog_sources_read", 0),
@@ -253,7 +257,7 @@ def _clean_summary(summary: str, valid_ids: set[str]) -> str:
 
 
 def write_report(store: Store, settings: Settings, run_id: str) -> ResearchReport:
-    report = build_report(store, run_id)
+    report = build_report(store, run_id, settings)
     payload = report.model_dump_json(indent=2)
     ResearchReport.model_validate_json(payload)  # the stored artifact must satisfy its own contract
     markdown = render_markdown(report)

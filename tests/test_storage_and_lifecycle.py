@@ -221,7 +221,7 @@ def test_state_survives_process_restart(harness):
     assert app.store.get_watch(watch_id)["status"] == WatchStatus.ACTIVE
 
     harness.web.epoch = 1
-    harness.clock.advance(days=1)
+    harness.clock.advance(hours=3)
     second = harness.run(watch_id)
     report = harness.report(second.run_id)
     assert report["session_number"] == 2

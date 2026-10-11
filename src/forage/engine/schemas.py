@@ -12,6 +12,15 @@ def _text(value, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+def _capped(limit: int):
+    """A list field whose length limit is given to the model server's grammar but not enforced on validation.
+
+    The server then stops the model at the limit instead of letting it spend tokens on entries
+    that would be discarded; an adapter without grammar support still validates.
+    """
+    return Field(default_factory=list, json_schema_extra={"maxItems": limit})
+
+
 class WatchDraft(BaseModel):
     title: str = ""
     key_questions: list[str] = Field(default_factory=list)
@@ -51,7 +60,7 @@ class PlannedQuery(BaseModel):
 
 
 class Plan(BaseModel):
-    queries: list[PlannedQuery] = Field(default_factory=list)
+    queries: list[PlannedQuery] = _capped(6)
 
 
 class TriageRating(BaseModel):
@@ -96,7 +105,7 @@ class ExtractedClaim(BaseModel):
 class ExtractedItem(BaseModel):
     title: str = ""
     subject: str = ""
-    claims: list[ExtractedClaim] = Field(default_factory=list)
+    claims: list[ExtractedClaim] = _capped(4)
     uncertainty: str | None = None
 
     @field_validator("title", "subject", mode="before")
@@ -113,7 +122,7 @@ class ExtractedItem(BaseModel):
 
 class Extraction(BaseModel):
     relevance: int = 0
-    items: list[ExtractedItem] = Field(default_factory=list)
+    items: list[ExtractedItem] = _capped(3)
 
     @field_validator("relevance", mode="before")
     @classmethod
@@ -225,9 +234,9 @@ class Reflection(BaseModel):
     # Field order is the generation order under schema-constrained decoding: essentials first,
     # so a truncated reply still carries the summary and the next directions.
     summary: str = ""
-    next_directions: list[NextDirection] = Field(default_factory=list)
-    new_questions: list[str] = Field(default_factory=list)
-    resolved: list[ResolvedQuestion] = Field(default_factory=list)
+    next_directions: list[NextDirection] = _capped(3)
+    new_questions: list[str] = _capped(3)
+    resolved: list[ResolvedQuestion] = _capped(6)
     guidance: GuidanceProposal | None = None
 
     @field_validator("summary", mode="before")
