@@ -92,3 +92,25 @@ def test_unknown_watch_is_a_clean_error(cli):
 def test_doctor_reports_simulated_configuration(cli):
     code, out = cli("doctor")
     assert code == 0 and "simulated (no real inference)" in out and "search provider fixture" in out
+
+
+def test_queue_commands_from_the_command_line(cli, monkeypatch):
+    monkeypatch.setenv("FORAGE_MIN_MINUTES_BETWEEN_SESSIONS", "0")
+    first = _watch_id(cli("watch", "create", OBJECTIVE, "--no-llm")[1])
+    second = _watch_id(cli("watch", "create", "What does tidal energy cost per megawatt hour today?", "--no-llm")[1])
+    cli("watch", "approve", first)
+    cli("watch", "approve", second)
+
+    code, out = cli("queue", "status")
+    status = json.loads(out)
+    assert code == 0 and [w["watch_id"] for w in status["next_in_rotation"]] == [first, second]
+    assert status["night_window"]["local"] == "02:00-06:00 America/Toronto"
+
+    code, out = cli("queue", "run", "--max-sessions", "3", "--ignore-window", "--quiet")
+    assert code == 0 and out.count("COMPLETED") == 3
+    lines = [line.split(":")[0] for line in out.splitlines() if "COMPLETED" in line]
+    assert lines == [first, second, first]
+
+    monkeypatch.setenv("FORAGE_SCHEDULER_AUTHORITY", "external")
+    code, out = cli("queue", "run", "--ignore-window", "--quiet")
+    assert code == 1 and "another controller owns scheduling" in out

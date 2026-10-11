@@ -121,7 +121,11 @@ def extract_html(html: str, url: str | None = None) -> Extracted:
 
 
 def extract_pdf(data: bytes) -> Extracted:
+    import logging
+
     from pypdf import PdfReader
+
+    logging.getLogger("pypdf").setLevel(logging.ERROR)  # malformed-object warnings are noise here
 
     out = Extracted()
     try:

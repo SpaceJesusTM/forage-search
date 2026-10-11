@@ -126,6 +126,7 @@ class _Session:
         self.findings: dict[str, FindingView] = {}
         self.focus: set[str] = set()
         self.recall: dict[str, int] = {}
+        self.hint_domains: set[str] = set()
         self.work_limits: list[str] | None = None
         self._last_attempt_id = 0
 
@@ -164,6 +165,12 @@ class _Session:
 
     def _say(self, message: str) -> None:
         self.e.progress(message)
+
+    def _domain_full(self, domain: str, pending: int = 0) -> bool:
+        """Per-site cap for one session, so one site cannot absorb the page budget. User-named sites are exempt."""
+        if domain in self.hint_domains:
+            return False
+        return self.domain_count.get(domain, 0) + pending >= self.settings.max_per_domain_per_session
 
     def _source_result(self, source: dict[str, Any], outcome: str, note: str | None = None,
                        http_status: int | None = None) -> None:
@@ -239,6 +246,7 @@ class _Session:
             canonical = canonicalize_url(hint)
         except UrlError:
             return
+        self.hint_domains.add(registrable_domain(hint))
         source, created = self.store.upsert_discovered_source(
             self.watch_id, canonical, hint, registrable_domain(hint), None, None, "user hint", self.run_id)
         if created:
@@ -264,7 +272,7 @@ class _Session:
             current = self.store.get_source(source["id"])
             if current is None or current["status"] not in (SourceStatus.DISCOVERED, SourceStatus.FAILED):
                 continue
-            if self.domain_count.get(current["domain"], 0) >= self.settings.max_per_domain_per_session:
+            if self._domain_full(current["domain"]):
                 continue
             self.c["backlog_sources_read"] += 1
             self._say(f"reading saved lead: {current['canonical_url']}")
@@ -463,8 +471,7 @@ class _Session:
         for _, _, cand in scored:
             if len(picks) >= quota:
                 break
-            if self.domain_count.get(cand["domain"], 0) + sum(1 for p in picks if p["domain"] == cand["domain"]) \
-                    >= self.settings.max_per_domain_per_session:
+            if self._domain_full(cand["domain"], pending=sum(1 for p in picks if p["domain"] == cand["domain"])):
                 continue
             picks.append(cand)
         self._event("triage", {"query": planned.query, "rated": len(ratings), "selected": [p["canonical_url"] for p in picks],

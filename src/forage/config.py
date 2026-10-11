@@ -52,7 +52,7 @@ class Settings:
     # Engine behaviour
     queries_per_session: int = 4
     fetch_per_query: int = 3
-    max_per_domain_per_session: int = 2
+    max_per_domain_per_session: int = 3  # sites the user named as hints are exempt
     page_chars_per_call: int = 7000
     extract_calls_per_page: int = 1
     max_rechecks_per_session: int = 2
@@ -62,7 +62,8 @@ class Settings:
     night_start: str = "02:00"
     night_end: str = "06:00"
     night_timezone: str = "America/Toronto"
-    scheduler_authority: str = "standalone"  # standalone | external
+    scheduler_authority: str = "standalone"  # standalone | external (another controller owns scheduling)
+    min_minutes_between_sessions: int = 60  # queued runs only: a watch is not served again sooner than this
 
     extra: dict[str, Any] = field(default_factory=dict)
 

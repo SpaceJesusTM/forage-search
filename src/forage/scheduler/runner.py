@@ -95,21 +95,37 @@ class RunManager:
 
     def run_watch(self, ref: str, *, trigger: str = "manual", overrides: dict[str, Any] | None = None,
                   run_id: str | None = None, should_stop: Callable[[], bool] | None = None) -> SessionOutcome:
+        """Admit and run one session for a named watch (manual use; the queue calls admit/execute itself)."""
         self.recover()
         watch = self.watches.get(ref)
-        watch_id = watch["id"]
-        run = self.admit(watch_id, trigger, overrides, run_id)
+        run = self.admit(watch["id"], trigger, overrides, run_id)
+        return self.execute_admitted(run["id"], should_stop)
+
+    def execute_admitted(self, run_id: str, should_stop: Callable[[], bool] | None = None) -> SessionOutcome:
+        run = self.store.get_run(run_id)
+        if run is None:
+            raise RunRefused(f"unknown run '{run_id}'")
+        watch_id = run["watch_id"]
 
         def should_cancel() -> bool:
             current = self.store.get_watch(watch_id)
             return current is None or current["status"] != WatchStatus.ACTIVE or bool(should_stop and should_stop())
 
         # Every policy runs the identical engine; only what happens after the session differs.
-        outcome = self.engine.execute(run["id"], should_cancel=should_cancel)
+        outcome = self.engine.execute(run_id, should_cancel=should_cancel)
         if outcome.status is RunStatus.COMPLETED:
             decision = self.evaluate_checkpoint(watch_id, outcome)
             if decision.request_review:
                 write_report(self.store, self.settings, outcome.run_id)  # include the pending question
+            if outcome.has_meaningful_update:
+                # For a future delivery adapter. Sessions with nothing new are recorded but queue no message,
+                # and cancelled or failed sessions are never offered for publication.
+                report = self.store.get_report(outcome.run_id) or {}
+                self.store.insert("outbox", {
+                    "run_id": outcome.run_id, "watch_id": watch_id, "kind": "REPORT",
+                    "payload": {"run_id": outcome.run_id, "json_path": report.get("json_path"),
+                                "markdown_path": report.get("markdown_path")},
+                    "created_at": self.store.now()}, or_ignore=True)
         return outcome
 
     def evaluate_checkpoint(self, watch_id: str, outcome: SessionOutcome) -> CheckpointDecision:

@@ -519,6 +519,43 @@ def cmd_review(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def cmd_queue(args: argparse.Namespace, settings: Settings) -> int:
+    from forage.scheduler.queue import Scheduler
+
+    import signal
+
+    from forage.scheduler.queue import SchedulerRefused
+
+    app = _app(settings, progress=args.action != "status" and not getattr(args, "quiet", False))
+    scheduler = Scheduler(app.store, app.settings, app.runner)
+    if args.action == "status":
+        _json(scheduler.status())
+        return 0
+
+    def stop(signum, frame):
+        # First signal: finish cleanly at the next checkpoint. A second one falls through to the default handler.
+        print("\nstop requested: the current session will end at its next checkpoint", flush=True)
+        scheduler.request_stop()
+        signal.signal(signum, signal.SIG_DFL)
+
+    previous = {sig: signal.signal(sig, stop) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        if args.action == "run":
+            results = scheduler.run_batch(max_sessions=args.max_sessions, respect_window=not args.ignore_window,
+                                          trigger="queue")
+        else:
+            results = scheduler.run_night(max_sessions=args.max_sessions, wait=args.wait)
+    except SchedulerRefused as exc:
+        print(f"forage: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+    for line in results:
+        _out(line)
+    return 0
+
+
 # ------------------------------------------------------------------ parser
 
 
@@ -629,6 +666,19 @@ def build_parser() -> argparse.ArgumentParser:
     _add_spec_flags(p, removal=True)
     p.set_defaults(func=cmd_review, action="respond")
 
+    queue = sub.add_parser("queue", help="multi-watch round-robin runner").add_subparsers(dest="queue_command", required=True)
+    p = queue.add_parser("status", help="show the queue, cursor and night window")
+    p.set_defaults(func=cmd_queue, action="status")
+    p = queue.add_parser("run", help="run a bounded number of queued sessions now")
+    p.add_argument("--max-sessions", type=int, default=1)
+    p.add_argument("--ignore-window", action="store_true", help="run outside the night window (manual use)")
+    p.add_argument("--quiet", action="store_true")
+    p.set_defaults(func=cmd_queue, action="run")
+    p = queue.add_parser("night", help="foreground runner for the night window (does not install any scheduler)")
+    p.add_argument("--max-sessions", type=int, default=12)
+    p.add_argument("--wait", action="store_true", help="if the window has not opened yet, wait for it")
+    p.add_argument("--quiet", action="store_true")
+    p.set_defaults(func=cmd_queue, action="night")
     return parser
 
 
