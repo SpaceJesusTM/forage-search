@@ -352,6 +352,16 @@ def cmd_findings(args: argparse.Namespace, settings: Settings) -> int:
     watch = WatchController(store).get(args.watch)
     sources = {s["id"]: s for s in store.list_sources(watch["id"])}
     seqs = {r["id"]: r["seq"] for r in store.list_runs(watch["id"])}
+    if args.rejected:
+        rejected = store.list_claims(watch_id=watch["id"], status=ClaimStatus.REJECTED)
+        _out(f"{len(rejected)} extracted claim(s) were discarded and never reported. They are kept so the filters can be audited.")
+        for claim in rejected:
+            source = sources.get(claim["source_id"], {})
+            _out(f"- [session {seqs.get(claim['run_id'], '?')}] {claim['note']}")
+            _out(f"    claim: {claim['text']}")
+            _out(f"    quote offered: \"{claim['quote'][:300]}\"")
+            _out(f"    {source.get('final_url') or source.get('url')}")
+        return 0
     findings = store.list_findings(watch["id"])
     if not findings:
         _out("No findings yet.")
@@ -661,6 +671,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("findings", help="everything found so far for a watch")
     p.add_argument("watch")
     p.add_argument("--evidence", action="store_true", help="show quotes and source URLs")
+    p.add_argument("--rejected", action="store_true", help="list discarded claims and why they were discarded")
     p.set_defaults(func=cmd_findings)
     p = sub.add_parser("sources", help="sources seen for a watch")
     p.add_argument("watch")

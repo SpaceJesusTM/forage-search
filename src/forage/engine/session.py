@@ -695,6 +695,9 @@ class _Session:
         verdicts = self._llm("support", prompts.support(pairs, self.objective, self.spec), SupportCheck,
                              30 + 22 * len(pairs))
         by_index = {v.index: v for v in (verdicts.verdicts if verdicts else [])}
+        # The bearing judgement of a small model is noisy. A page with no directly relevant claim is
+        # treated as tangential and dropped; on a page that has some, background claims are kept and labelled.
+        any_direct = any(v.bearing == "direct" and v.verdict != "unsupported" for v in by_index.values())
         for i, kept in enumerate(flat):
             verdict = by_index.get(i + 1)
             if verdict is not None and verdict.verdict == "unsupported":
@@ -702,11 +705,13 @@ class _Session:
                 self._store_rejected(source, snapshot_id, kept.text, kept.check.quote, "unsupported_by_quote",
                                      kept.check, Support.UNSUPPORTED)
                 continue
-            if verdict is not None and verdict.bearing != "direct":
+            if verdict is not None and (verdict.bearing == "none" or (verdict.bearing == "background" and not any_direct)):
                 kept.dropped = True
                 self._store_rejected(source, snapshot_id, kept.text, kept.check.quote, "not_relevant_to_objective",
                                      kept.check)
                 continue
+            if verdict is not None and verdict.bearing == "background":
+                kept.check.notes.append("judged background rather than directly on the objective")
             if verdict is not None:
                 kept.support = Support.SUPPORTED if verdict.verdict == "supported" else Support.PARTIAL
             # Deterministic downgrades: whatever the model judged, a claim that carries names or numbers its

@@ -567,3 +567,19 @@ def test_before_after_comparison_shows_reuse_of_prior_state(harness):
     assert comparison["new_in_later_session"][0]["claims"][0]["evidence_url"] == "https://news.example.net/tidal-array"
     text = render_comparison(comparison)
     assert "SIMULATED" in text and "Searches repeated word for word: 0" in text
+
+
+def test_background_claims_survive_only_alongside_direct_ones(make_harness):
+    def mixed(payload):
+        return {"verdicts": [{"index": p["index"], "verdict": "supported", "bearing": "direct" if p["index"] == 1 else "background"}
+                             for p in payload["pairs"]]}
+
+    harness = make_harness(SimulatedLLM(overrides={"support": mixed}))
+    watch_id = harness.watch()
+    harness.web.docs = [d for d in harness.web.docs if "tides.example.org" in d["url"]]
+    outcome = harness.run(watch_id, max_search_requests=1)
+    claims = harness.app.store.list_claims(watch_id=watch_id)
+    assert len(claims) == 3 and outcome.metrics["claims_rejected"] == 0
+    labelled = [c for c in claims if c["note"] and "judged background" in c["note"]]
+    assert len(labelled) == 2  # kept, but marked as background
+    assert any("judged background" in (c["note"] or "") for f in harness.report(outcome.run_id)["findings"] for c in f["claims"])

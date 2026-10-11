@@ -181,8 +181,7 @@ def support(pairs: list[dict[str, Any]], objective: str = "", spec: WatchSpec | 
         "- direct: a specific fact about the exact subject of the objective that helps answer it.\n"
         "- background: true to the page but about a neighbouring subject, something listed as out of scope, general "
         "advice, a definition, or how the source ran its own study.\n"
-        "- none: an instruction or example copied from the page, marketing, or unrelated.\n"
-        "Be strict: when a claim is about something the objective does not name, it is background."
+        "- none: an instruction or example copied from the page, marketing, or unrelated."
     )
     listing = "\n\n".join(
         f"[{p['index']}]\nCLAIM: {one_line(p['claim'], 400)}\nQUOTE: {one_line(p['quote'], 600)}" for p in pairs
