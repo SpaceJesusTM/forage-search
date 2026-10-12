@@ -52,11 +52,12 @@ class Harness:
     def open(self) -> App:
         self.app = build_app(self.settings, llm=self.llm, search=FixtureSearch(self.web), fetcher=FixtureFetcher(self.web),
                              progress=self.progress.append, clock=self.clock, sleep=lambda s: None)
-        if os.environ.get("FORAGE_TEST_ENGINE") == "langgraph":
-            # EXPERIMENTAL: run the same tests with the LangGraph prototype sequencing the session.
-            from forage.experimental.langgraph_engine import use_langgraph_engine
+        kind = os.environ.get("FORAGE_TEST_ENGINE", "linear")
+        if kind != "linear":
+            # EXPERIMENTAL: run the same tests with a step-driven prototype ('langgraph' or 'plain') in place.
+            from forage.experimental.langgraph_engine import use_engine
 
-            self.graph_engine = use_langgraph_engine(self.app, **self.engine_options)
+            self.graph_engine = use_engine(self.app, kind, **self.engine_options)
         return self.app
 
     def reopen(self) -> App:

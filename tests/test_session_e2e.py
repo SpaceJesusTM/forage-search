@@ -583,3 +583,63 @@ def test_background_claims_survive_only_alongside_direct_ones(make_harness):
     labelled = [c for c in claims if c["note"] and "judged background" in c["note"]]
     assert len(labelled) == 2  # kept, but marked as background
     assert any("judged background" in (c["note"] or "") for f in harness.report(outcome.run_id)["findings"] for c in f["claims"])
+
+
+# ------------------------------ pages caught mid-read by a stop or a crash
+
+
+def _pause_during_first_extraction(harness, watch_id):
+    real = harness.llm.generate
+
+    def generate(**kwargs):
+        result = real(**kwargs)
+        if kwargs["purpose"] == "extract" and harness.app.store.get_watch(watch_id)["status"] == WatchStatus.ACTIVE:
+            harness.app.watches.pause(watch_id)  # the user pauses while a page is being read
+        return result
+
+    harness.llm.generate = generate
+
+
+def test_page_being_read_when_session_is_cancelled_is_read_next_time(harness):
+    watch_id = harness.watch()
+    _pause_during_first_extraction(harness, watch_id)
+    cancelled = harness.run(watch_id, max_search_requests=1)
+    assert cancelled.status is RunStatus.CANCELLED
+    interrupted_url = harness.web.fetch_log[-1]
+    source = harness.app.store.get_source_by_url(watch_id, interrupted_url)
+    assert harness.app.store.list_claims(source_id=source["id"], status=None) == []  # nothing was filed from it
+    assert source["status"] == SourceStatus.DISCOVERED and (source["relevance"] or 0) >= 2  # so it is a lead again
+
+    del harness.llm.generate  # stop pausing; back to the simulated model's own method
+    harness.app.watches.request_resume(watch_id)
+    harness.app.watches.approve(watch_id)
+    again = harness.run(watch_id)
+    assert again.status is RunStatus.COMPLETED and again.metrics["backlog_sources_read"] >= 1
+    assert harness.web.fetch_log.count(interrupted_url) == 2
+    assert harness.app.store.list_claims(source_id=source["id"])  # its facts were not lost
+
+
+def test_page_stored_before_a_crash_is_read_after_recovery(harness):
+    watch_id = harness.watch()
+    real = harness.llm.generate
+
+    class Died(BaseException):
+        pass
+
+    def generate(**kwargs):
+        if kwargs["purpose"] == "extract":
+            raise Died()  # the process dies while the model is reading the page
+        return real(**kwargs)
+
+    harness.llm.generate = generate
+    with pytest.raises(Died):
+        harness.run(watch_id, max_search_requests=1)
+    harness.llm.generate = real
+    stranded_url = harness.web.fetch_log[-1]
+    harness.reopen()
+    assert len(harness.app.runner.recover(force=True)) == 1
+    source = harness.app.store.get_source_by_url(watch_id, stranded_url)
+    assert source["status"] == SourceStatus.DISCOVERED
+    recovered = harness.run(watch_id)
+    assert recovered.status is RunStatus.COMPLETED
+    assert harness.app.store.list_claims(source_id=source["id"])

@@ -233,6 +233,28 @@ class Store(Database):
         )
         return int(cur.lastrowid or 0), True
 
+    def requeue_unread_pages(self, run_id: str) -> list[str]:
+        """Make pages that a run stored but never finished reading into leads again.
+
+        A session that is cancelled, fails or dies between fetching a page and filing its claims
+        leaves the page marked as read with nothing extracted, and later sessions skip known pages.
+        This puts such pages back in the queue, with the content hash of the version before this run
+        so the next read is treated as new (or changed) content.
+        """
+        rows = self.all(
+            "SELECT s.id, s.relevance FROM source s WHERE s.status = ? "
+            "AND EXISTS (SELECT 1 FROM source_snapshot p WHERE p.source_id = s.id AND p.run_id = ?) "
+            "AND NOT EXISTS (SELECT 1 FROM run_event e WHERE e.run_id = ? AND e.kind = 'source_result' "
+            "AND json_extract(e.data, '$.source_id') = s.id)", (SourceStatus.FETCHED, run_id, run_id))
+        for row in rows:
+            earlier = self.one(
+                "SELECT content_hash FROM source_snapshot WHERE source_id = ? AND run_id != ? ORDER BY id DESC LIMIT 1",
+                (row["id"], run_id))
+            self.update_source(row["id"], status=SourceStatus.DISCOVERED, relevance=max(row["relevance"] or 0, 2),
+                               content_hash=earlier["content_hash"] if earlier else None,
+                               triage_note="stored by an unfinished session; to be read")
+        return [row["id"] for row in rows]
+
     def get_snapshot(self, snapshot_id: int) -> dict[str, Any] | None:
         return self.one("SELECT * FROM source_snapshot WHERE id = ?", (snapshot_id,))
 

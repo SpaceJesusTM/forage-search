@@ -87,3 +87,22 @@ def first_difference(a: Any, b: Any, path: str = "") -> str | None:
                 return found
         return None
     return None if a == b else f"{path}: {str(a)[:140]!r} != {str(b)[:140]!r}"
+
+
+def research_state(store, watch_id: str, report: dict[str, Any] | None = None) -> dict[str, Any]:
+    """What the research produced, independent of how many attempts it took to get there."""
+    findings = {f["id"]: f["title"] for f in store.list_findings(watch_id)}
+    last = store.list_runs(watch_id)[-1]
+    if report is None:
+        row = store.get_report(last["id"])
+        report = json.loads(row["json"]) if row else {"findings": []}
+    return {
+        "claims": sorted((c["text"], c["status"], c["verification"], c["support"])
+                         for c in store.list_claims(watch_id=watch_id, status=None)),
+        "findings": sorted((f["title"], f["status"]) for f in store.list_findings(watch_id)),
+        "changes": sorted((findings[c["finding_id"]], c["change_type"]) for c in store.list_changes(last["id"])),
+        "questions": sorted((q["text"], q["status"]) for q in store.list_questions(watch_id)),
+        "sources": sorted((s["canonical_url"], s["status"], s["relevance"]) for s in store.list_sources(watch_id)),
+        "run": (last["status"], last["stop_reason"], bool(last["has_meaningful_update"])),
+        "report": [(f["title"], f["change_type"], len(f["claims"])) for f in report["findings"]],
+    }

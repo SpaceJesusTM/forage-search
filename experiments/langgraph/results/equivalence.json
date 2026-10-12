@@ -1,0 +1,37 @@
+{
+  "traces": {
+    "tidal_5_sessions": {
+      "sessions": 5,
+      "searches": 18,
+      "fetches": 15,
+      "model_calls": 46,
+      "langgraph_vs_linear": "identical",
+      "plain_vs_linear": "identical"
+    },
+    "scoped_2_sessions": {
+      "sessions": 2,
+      "searches": 4,
+      "fetches": 1,
+      "model_calls": 10,
+      "langgraph_vs_linear": "identical",
+      "plain_vs_linear": "identical"
+    }
+  },
+  "three_watch_experiment": {
+    "continuous": {
+      "sessions": 30,
+      "langgraph_vs_linear": "identical",
+      "plain_vs_linear": "identical"
+    },
+    "periodic": {
+      "sessions": 27,
+      "langgraph_vs_linear": "identical",
+      "plain_vs_linear": "identical"
+    },
+    "adaptive": {
+      "sessions": 30,
+      "langgraph_vs_linear": "identical",
+      "plain_vs_linear": "identical"
+    }
+  }
+}

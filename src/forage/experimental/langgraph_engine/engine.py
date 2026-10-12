@@ -19,7 +19,8 @@ from langgraph.types import Command, RetryPolicy
 
 from forage.engine.schemas import GuidanceProposal
 from forage.engine.session import ResearchEngine, SessionCancelled, SessionOutcome
-from forage.experimental.langgraph_engine.graph import EngineContext, build_graph
+from forage.experimental.langgraph_engine.graph import build_graph
+from forage.experimental.langgraph_engine.nodes import EngineContext
 from forage.experimental.langgraph_engine.steps import StepSession
 from forage.llm.base import LLMUnavailable
 from forage.types import RunStatus

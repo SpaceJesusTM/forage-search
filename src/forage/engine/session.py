@@ -1078,6 +1078,10 @@ class _Session:
             {"status": status, "finished_at": iso(self.e.clock()), "metrics": metrics, "stop_reason": stop_reason,
              "error": error, "has_meaningful_update": meaningful},
         )
+        if status is not RunStatus.COMPLETED:
+            requeued = self.store.requeue_unread_pages(self.run_id)
+            if requeued:
+                self._event("pages_requeued", {"source_ids": requeued})
         self._event("session_finished", {"status": status, "stop_reason": stop_reason, "meaningful": meaningful})
         try:
             write_report(self.store, self.settings, self.run_id)

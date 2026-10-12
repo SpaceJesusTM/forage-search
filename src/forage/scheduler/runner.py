@@ -44,6 +44,9 @@ class RunManager:
         """Close out sessions whose process died, and give each a report of what it had stored."""
         recovered = self.store.recover_stale_runs(0 if force else self.stale_after_seconds, self.clock())
         for run_id in recovered:
+            requeued = self.store.requeue_unread_pages(run_id)
+            if requeued:
+                self.store.add_event(run_id, None, "pages_requeued", {"source_ids": requeued})
             try:
                 write_report(self.store, self.settings, run_id)
             except Exception as exc:  # recovery must not fail because one report could not be rendered

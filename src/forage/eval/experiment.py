@@ -75,7 +75,8 @@ def _scripted_answer(rules: dict[str, Any], key: str, runs: list[dict[str, Any]]
     return {"when": "always", "choice": "continue"}
 
 
-def run_policy(scenario: dict[str, Any], policy: str, data_dir: Path) -> dict[str, Any]:
+def run_policy(scenario: dict[str, Any], policy: str, data_dir: Path, configure=None) -> dict[str, Any]:
+    """Run one policy on the scenario. `configure(app)` may adjust the app before any session runs."""
     if data_dir.exists():
         shutil.rmtree(data_dir)
     budget = scenario.get("budget", {})
@@ -85,6 +86,8 @@ def run_policy(scenario: dict[str, Any], policy: str, data_dir: Path) -> dict[st
     web = SimulatedWeb(json.loads(json.dumps(scenario["web"]["docs"])))
     app = build_app(settings, llm=SimulatedLLM(), search=FixtureSearch(web), fetcher=FixtureFetcher(web), clock=clock,
                     sleep=lambda seconds: None)
+    if configure is not None:
+        configure(app)
     scheduler = Scheduler(app.store, settings, app.runner, clock=clock, sleep=lambda seconds: None, owner="experiment")
     config = (scenario.get("policy_config") or {}).get(policy, {})
     ids: dict[str, str] = {}

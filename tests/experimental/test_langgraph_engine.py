@@ -1,7 +1,8 @@
-"""EXPERIMENTAL: the LangGraph session prototype. SIMULATED web and model throughout.
+"""EXPERIMENTAL: the step-driven session prototypes. SIMULATED web and model throughout.
 
-Skipped when LangGraph is not installed. These tests back the comparison in
-docs/LANGGRAPH_ARCHITECTURE_DECISION.md.
+Every test that is not specific to LangGraph runs twice: once with the LangGraph driver and
+once with the plain-loop driver over the same steps. Skipped when LangGraph is not installed.
+These tests back the comparison in docs/LANGGRAPH_ARCHITECTURE_DECISION.md.
 """
 
 import json
@@ -20,43 +21,47 @@ from langgraph.types import RetryPolicy  # noqa: E402
 
 from conftest import Harness  # noqa: E402
 from experiments.langgraph.faults import Faults, SimulatedCrash  # noqa: E402
+from experiments.langgraph import trace  # noqa: E402
 from experiments.langgraph.trace import collect, first_difference  # noqa: E402
-from forage.experimental.langgraph_engine import NODE_NAMES, LangGraphEngine, StepSession, use_langgraph_engine  # noqa: E402
-from forage.experimental.langgraph_engine.graph import _STEPS, EngineContext  # noqa: E402
+from forage.experimental.langgraph_engine import NODE_NAMES, StepSession, use_engine  # noqa: E402
+from forage.experimental.langgraph_engine.nodes import STEPS as _STEPS, EngineContext  # noqa: E402
 from forage.simulated import SimulatedLLM  # noqa: E402
 from forage.types import RunStatus, WatchStatus  # noqa: E402
 
 
+DRIVER = "langgraph"
+
+
+@pytest.fixture(params=["langgraph", "plain"], autouse=True)
+def driver(request):
+    global DRIVER
+    DRIVER = request.param
+    return request.param
+
+
+def langgraph_only() -> None:
+    if DRIVER != "langgraph":
+        pytest.skip("exercises a LangGraph facility the plain loop does not have")
+
+
 def graph_harness(tmp_path, name="graph", llm=None, engine_options=None, **settings) -> Harness:
     harness = Harness(tmp_path / name, llm, **settings)
-    harness.engine_options = engine_options or {}
-    harness.graph_engine = use_langgraph_engine(harness.app, **harness.engine_options)
+    harness.engine_kind, harness.engine_options = DRIVER, engine_options or {}
+    harness.graph_engine = use_engine(harness.app, DRIVER, **harness.engine_options)
     return harness
 
 
-def restart(harness: Harness) -> LangGraphEngine:
+def restart(harness: Harness):
     """A new process: every in-memory object is rebuilt from the two SQLite files."""
     harness.graph_engine.close()
     harness.app.close()
     harness.open()
-    harness.graph_engine = use_langgraph_engine(harness.app, **harness.engine_options)
+    harness.graph_engine = use_engine(harness.app, harness.engine_kind, **harness.engine_options)
     return harness.graph_engine
 
 
 def research_state(harness: Harness, watch_id: str) -> dict:
-    """What the research produced, independent of how many attempts it took to get there."""
-    store = harness.app.store
-    findings = {f["id"]: f["title"] for f in store.list_findings(watch_id)}
-    last = store.list_runs(watch_id)[-1]
-    return {
-        "claims": sorted((c["text"], c["status"], c["verification"], c["support"]) for c in store.list_claims(watch_id=watch_id, status=None)),
-        "findings": sorted((f["title"], f["status"]) for f in store.list_findings(watch_id)),
-        "changes": sorted((findings[c["finding_id"]], c["change_type"]) for c in store.list_changes(last["id"])),
-        "questions": sorted((q["text"], q["status"]) for q in store.list_questions(watch_id)),
-        "sources": sorted((s["canonical_url"], s["status"], s["relevance"]) for s in store.list_sources(watch_id)),
-        "run": (last["status"], last["stop_reason"], bool(last["has_meaningful_update"])),
-        "report": [(f["title"], f["change_type"], len(f["claims"])) for f in harness.report(last["id"])["findings"]],
-    }
+    return trace.research_state(harness.app.store, watch_id)
 
 
 # ---------------------------------------------- 1. same research, graph-level steps
@@ -90,11 +95,13 @@ def test_session_runs_as_separate_checkpointed_graph_steps(tmp_path):
     for step in ("fetch", "extract", "integrate"):
         assert visited.count(step) >= 3
     assert set(visited) <= set(NODE_NAMES)
-    assert harness.graph_engine.snapshot(outcome.run_id).next == ()  # the thread ran to its end
+    assert harness.graph_engine.history(outcome.run_id)[-1][1] == ()  # the session ran to its end
+    assert not harness.graph_engine.can_resume(outcome.run_id)
     harness.close()
 
 
 def test_checkpoints_hold_references_not_documents(tmp_path):
+    langgraph_only()
     harness = graph_harness(tmp_path)
     watch_id = harness.watch()
     outcome = harness.run(watch_id)
@@ -248,6 +255,7 @@ class Transient(Exception):
 
 
 def test_automatic_node_retry_does_not_repeat_the_search(tmp_path):
+    langgraph_only()
     harness = graph_harness(tmp_path, engine_options={
         "retry": {"search": RetryPolicy(max_attempts=3, initial_interval=0.0, jitter=False, retry_on=Transient)}})
     watch_id = harness.watch()
@@ -315,7 +323,7 @@ def test_paused_session_is_cancelled_like_before_and_can_later_continue(tmp_path
     assert harness.report(outcome.run_id)["status"] == "cancelled"
     assert harness.app.store.running_run() is None
     engine = harness.graph_engine
-    assert engine.can_resume(outcome.run_id) and engine.snapshot(outcome.run_id).next == ("fetch",)
+    assert engine.can_resume(outcome.run_id) and engine.history(outcome.run_id)[-1][1] == ("fetch",)
 
     harness.app.watches.request_resume(watch_id)
     harness.app.watches.approve(watch_id)
@@ -451,7 +459,8 @@ def test_session_can_stop_to_ask_and_continue_with_the_answer(tmp_path, approve)
 # ---------------------------------------- 10. testing and debugging single steps
 
 
-def test_a_single_node_can_be_tested_from_a_handwritten_state(tmp_path):
+def test_a_single_step_can_be_tested_from_a_handwritten_state(tmp_path):
+    """Steps are plain functions of (session, state, context): no driver is involved here at all."""
     harness = graph_harness(tmp_path)
     watch_id = harness.watch()
     run = harness.app.runner.admit(watch_id, "manual")
@@ -475,6 +484,7 @@ def test_a_single_node_can_be_tested_from_a_handwritten_state(tmp_path):
 
 def test_a_late_step_can_be_rerun_from_its_checkpoint_without_repeating_the_session(tmp_path):
     """Time travel: re-run only the review step, for example to try a different prompt or model."""
+    langgraph_only()
     harness = graph_harness(tmp_path)
     watch_id = harness.watch()
     outcome = harness.run(watch_id)
