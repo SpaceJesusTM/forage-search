@@ -3,18 +3,18 @@
     "import_ms": 0,
     "modules_loaded": 637,
     "python_heap_peak_mb_during_5_sessions": 6.97,
-    "process_peak_rss_mb": 68.1
+    "process_peak_rss_mb": 65.6
   },
   "langgraph": {
-    "import_ms": 528,
+    "import_ms": 396,
     "modules_loaded": 1245,
-    "python_heap_peak_mb_during_5_sessions": 6.64,
-    "process_peak_rss_mb": 97.1
+    "python_heap_peak_mb_during_5_sessions": 6.65,
+    "process_peak_rss_mb": 96.0
   },
   "plain": {
-    "import_ms": 4,
+    "import_ms": 2,
     "modules_loaded": 637,
-    "python_heap_peak_mb_during_5_sessions": 7.0,
-    "process_peak_rss_mb": 68.2
+    "python_heap_peak_mb_during_5_sessions": 7.01,
+    "process_peak_rss_mb": 65.6
   }
 }

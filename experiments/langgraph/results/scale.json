@@ -2,22 +2,22 @@
   "0_findings": {
     "stored_findings": 0,
     "stored_claims": 0,
-    "linear_ms_per_session": 21.9,
-    "langgraph_ms_per_session": 80.5,
-    "plain_ms_per_session": 44.9
+    "linear_ms_per_session": 27.7,
+    "langgraph_ms_per_session": 92.2,
+    "plain_ms_per_session": 68.2
   },
   "200_findings": {
     "stored_findings": 200,
     "stored_claims": 800,
-    "linear_ms_per_session": 249.9,
-    "langgraph_ms_per_session": 896.3,
-    "plain_ms_per_session": 542.9
+    "linear_ms_per_session": 209.4,
+    "langgraph_ms_per_session": 546.2,
+    "plain_ms_per_session": 505.0
   },
   "1000_findings": {
     "stored_findings": 1000,
     "stored_claims": 5000,
-    "linear_ms_per_session": 1063.6,
-    "langgraph_ms_per_session": 4245.3,
-    "plain_ms_per_session": 3349.2
+    "linear_ms_per_session": 1460.3,
+    "langgraph_ms_per_session": 3834.3,
+    "plain_ms_per_session": 3495.5
   }
 }

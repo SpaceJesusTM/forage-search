@@ -140,6 +140,7 @@ Defaults work on a machine with Ollama on its usual port. Override with `FORAGE_
 
 - [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) — what was built, how it was tested, live results, known defects, next steps.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the architecture as built, evidence rules, security model.
+- [`docs/LANGGRAPH_ARCHITECTURE_DECISION.md`](docs/LANGGRAPH_ARCHITECTURE_DECISION.md) — evaluation of LangGraph as the session orchestrator, with a prototype and measurements (branch `experiment/langgraph`).
 - [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — environment findings, stack choices, milestone status.
 - [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) — scope, behaviours, lifecycle, milestones (design specification).
 - [`docs/ARCHITECTURE_CONTRACTS.md`](docs/ARCHITECTURE_CONTRACTS.md) — proposed boundaries and data contracts (design specification).
