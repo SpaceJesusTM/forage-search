@@ -7,6 +7,7 @@ or Ollama. Live checks are in test_live.py behind the `live` marker.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -36,8 +37,10 @@ class FakeClock:
 class Harness:
     """A Forage app wired to the simulated web and model, with helpers for common steps."""
 
-    def __init__(self, tmp_path: Path, llm: SimulatedLLM | None = None, **overrides):
+    def __init__(self, tmp_path: Path, llm: SimulatedLLM | None = None, engine_options: dict | None = None, **overrides):
         self.tmp_path = tmp_path
+        self.engine_options = engine_options or {}
+        self.graph_engine = None
         self.web = SimulatedWeb.from_file(CORPUS)
         self.llm = llm or SimulatedLLM()
         self.clock = FakeClock()
@@ -49,12 +52,23 @@ class Harness:
     def open(self) -> App:
         self.app = build_app(self.settings, llm=self.llm, search=FixtureSearch(self.web), fetcher=FixtureFetcher(self.web),
                              progress=self.progress.append, clock=self.clock, sleep=lambda s: None)
+        if os.environ.get("FORAGE_TEST_ENGINE") == "langgraph":
+            # EXPERIMENTAL: run the same tests with the LangGraph prototype sequencing the session.
+            from forage.experimental.langgraph_engine import use_langgraph_engine
+
+            self.graph_engine = use_langgraph_engine(self.app, **self.engine_options)
         return self.app
 
     def reopen(self) -> App:
         """Simulate a process restart: drop every in-memory object and reopen the database file."""
-        self.app.close()
+        self.close()
         return self.open()
+
+    def close(self) -> None:
+        if self.graph_engine is not None:
+            self.graph_engine.close()
+            self.graph_engine = None
+        self.app.close()
 
     def watch(self, objective: str = OBJECTIVE, approve: bool = True, policy: str = "continuous",
               policy_config: dict | None = None, budget: dict | None = None, **spec) -> str:
@@ -78,7 +92,7 @@ class Harness:
 def harness(tmp_path: Path):
     h = Harness(tmp_path)
     yield h
-    h.app.close()
+    h.close()
 
 
 @pytest.fixture
@@ -92,4 +106,4 @@ def make_harness(tmp_path: Path):
 
     yield factory
     for h in created:
-        h.app.close()
+        h.close()

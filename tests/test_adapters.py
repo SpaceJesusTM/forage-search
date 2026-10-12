@@ -300,3 +300,9 @@ def test_searxng_adapter_parses_json_results():
     provider = SearxngSearch("http://searx.test", client=httpx.Client(transport=httpx.MockTransport(handler)))
     results = provider.search("anything")
     assert [(r.url, r.snippet) for r in results] == [("https://example.com/a", "snippet a")]
+
+
+def test_extraction_is_the_same_however_often_a_page_is_read_in_one_process():
+    """A long-running process re-reads pages. The text, and so the content hash, must not drift."""
+    texts = {extract_html(HTML, "https://example.com/northbay").text for _ in range(6)}
+    assert len(texts) == 1

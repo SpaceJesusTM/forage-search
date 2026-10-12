@@ -89,9 +89,12 @@ def extract_html(html: str, url: str | None = None) -> Extracted:
 
     text = None
     try:
+        # deduplicate must stay off: trafilatura implements it with a process-wide cache of text it has
+        # seen, so the same page extracted a few times in one process came back different, and an
+        # unchanged page then looked changed.
         text = trafilatura.extract(
             cleaned, url=url, include_comments=False, include_tables=True, include_links=False,
-            favor_recall=True, deduplicate=True,
+            favor_recall=True, deduplicate=False,
         )
     except Exception:
         text = None

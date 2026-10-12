@@ -173,6 +173,28 @@ class _Session:
         self._read_backlog(limit=self.budget.budget.max_fetched_pages)
         self.work_limits = self.budget.limits_reached()  # measured before wrap-up spends its reserve
         self._reflect()
+        for _ in range(self.settings.followup_rounds):
+            if not self._wants_follow_up():
+                break
+            self._run_queries(self._plan_follow_up())
+            self.work_limits = self.budget.limits_reached()
+            self._reflect()
+
+    def _wants_follow_up(self) -> bool:
+        """Another round is worthwhile only if the review left a direction to pursue and budget remains."""
+        budget = self.budget
+        if budget.search_requests >= budget.budget.max_search_requests or budget.fetched_pages >= budget.budget.max_fetched_pages:
+            return False
+        if not self.store.list_leads(self.watch_id, "OPEN"):
+            return False
+        return budget.time_left_for_work()
+
+    def _plan_follow_up(self) -> list[PlannedQuery]:
+        """Plan from the state as it is now, including the questions and directions this session just wrote."""
+        self._attach_memory(build_memory(self.store, self.watch_id, self.spec, self.e.clock(),
+                                         self.settings.requery_after_hours))
+        left = self.budget.budget.max_search_requests - self.budget.search_requests
+        return self._plan(limit=min(2, left))
 
     def _early_lead_limit(self) -> int:
         """Saved leads read before searching: at most a third of the page budget."""
@@ -254,14 +276,17 @@ class _Session:
             self.store.add_question(self.watch_id, self.objective, "SPEC")
         for hint in self.spec.source_hints:
             self._register_hint(hint)
-        self.memory = build_memory(self.store, self.watch_id, self.spec, self.e.clock(),
-                                   self.settings.requery_after_hours)
-        self.findings = self.memory.findings
-        self.focus = token_set(" ".join([self.objective, *self.spec.key_questions, *self.spec.include, *self.spec.priorities]))
+        self._attach_memory(build_memory(self.store, self.watch_id, self.spec, self.e.clock(),
+                                         self.settings.requery_after_hours))
         self.recall = self.memory.summary()  # what this session started from, before it adds anything
         self._event("recall", self.recall)
         self._say(f"session {self.memory.session_number}: recalled {len(self.findings)} findings, "
                   f"{len(self.memory.open_questions)} open questions, {len(self.memory.tried_queries)} earlier queries")
+
+    def _attach_memory(self, memory: Memory) -> None:
+        self.memory = memory
+        self.findings = memory.findings
+        self.focus = token_set(" ".join([self.objective, *self.spec.key_questions, *self.spec.include, *self.spec.priorities]))
 
     def _register_hint(self, hint: str) -> None:
         if "/" not in hint and "." in hint and " " not in hint:
@@ -320,7 +345,9 @@ class _Session:
     def _search_phase(self) -> None:
         if self.budget.budget.max_search_requests <= 0:
             return
-        queries = self._plan()
+        self._run_queries(self._plan())
+
+    def _run_queries(self, queries: list[PlannedQuery]) -> None:
         for i, planned in enumerate(queries):
             pages_left = self.budget.budget.max_fetched_pages - self.budget.fetched_pages
             if pages_left <= 0 or not self.budget.can_search():
@@ -798,12 +825,14 @@ class _Session:
 
         if target is None:
             first_id = self.store.claim_id(self.watch_id, source["id"], kept[0].text)
-            finding_id = self.store.create_finding(self.watch_id, self.run_id, title, subject, relevance, uncertainty, first_id)
-            view = self.findings.setdefault(finding_id, FindingView(finding_id, title, subject, "ACTIVE"))
-            added = self._add_claims(finding_id, view, source, snapshot_id, kept)
-            view.domains.add(domain)
-            if added:
-                self.store.record_change(self.run_id, self.watch_id, finding_id, ChangeType.NEW, {"new_claim_ids": added})
+            # One transaction: a crash cannot leave a finding's claims stored without its change record.
+            with self.store.tx():
+                finding_id = self.store.create_finding(self.watch_id, self.run_id, title, subject, relevance, uncertainty, first_id)
+                view = self.findings.setdefault(finding_id, FindingView(finding_id, title, subject, "ACTIVE"))
+                added = self._add_claims(finding_id, view, source, snapshot_id, kept)
+                view.domains.add(domain)
+                if added:
+                    self.store.record_change(self.run_id, self.watch_id, finding_id, ChangeType.NEW, {"new_claim_ids": added})
             return
 
         view = self.findings[target]
@@ -831,26 +860,27 @@ class _Session:
 
         same_source_before = any(c["source_id"] == source["id"] for c in view.claims)
         new_domain = domain not in view.domains
-        added_novel = self._add_claims(target, view, source, snapshot_id, novel)
-        added_repeat: list[str] = []
-        if repeats:
-            if same_source_before:
-                self.c["duplicate_claims_suppressed"] += len(repeats)
+        with self.store.tx():  # the model call above is done; the writes below land together
+            added_novel = self._add_claims(target, view, source, snapshot_id, novel)
+            added_repeat: list[str] = []
+            if repeats:
+                if same_source_before:
+                    self.c["duplicate_claims_suppressed"] += len(repeats)
+                else:
+                    # The same fact from another source is kept once as corroborating evidence.
+                    added_repeat = self._add_claims(target, view, source, snapshot_id, repeats[:1])
+                    self.c["duplicate_claims_suppressed"] += len(repeats) - len(added_repeat)
+            view.domains.add(domain)
+            self.store.update_finding(target, last_confirmed_at=now, status="ACTIVE")
+            if added_novel:
+                self.store.update_finding(target, last_changed_run_id=self.run_id, last_changed_at=now,
+                                          **({"uncertainty": uncertainty} if uncertainty and not self.store.get_finding(target)["uncertainty"] else {}))
+                self.store.record_change(self.run_id, self.watch_id, target, ChangeType.UPDATED, {"new_claim_ids": added_novel})
+            elif added_repeat and new_domain:
+                self.store.record_change(self.run_id, self.watch_id, target, ChangeType.CORROBORATED,
+                                         {"corroborating_claim_ids": added_repeat, "new_domain": domain})
             else:
-                # The same fact from another source is kept once as corroborating evidence.
-                added_repeat = self._add_claims(target, view, source, snapshot_id, repeats[:1])
-                self.c["duplicate_claims_suppressed"] += len(repeats) - len(added_repeat)
-        view.domains.add(domain)
-        self.store.update_finding(target, last_confirmed_at=now, status="ACTIVE")
-        if added_novel:
-            self.store.update_finding(target, last_changed_run_id=self.run_id, last_changed_at=now,
-                                      **({"uncertainty": uncertainty} if uncertainty and not self.store.get_finding(target)["uncertainty"] else {}))
-            self.store.record_change(self.run_id, self.watch_id, target, ChangeType.UPDATED, {"new_claim_ids": added_novel})
-        elif added_repeat and new_domain:
-            self.store.record_change(self.run_id, self.watch_id, target, ChangeType.CORROBORATED,
-                                     {"corroborating_claim_ids": added_repeat, "new_domain": domain})
-        else:
-            self.store.record_change(self.run_id, self.watch_id, target, ChangeType.UNCHANGED, {"seen_again_in": [source["id"]]})
+                self.store.record_change(self.run_id, self.watch_id, target, ChangeType.UNCHANGED, {"seen_again_in": [source["id"]]})
 
     def _match_items(self, source: dict[str, Any], ready: list[tuple[ExtractedItem, list[_Accepted]]]) -> list[str | None]:
         """Decide, for each item from one page, which existing finding it belongs with (or none).
