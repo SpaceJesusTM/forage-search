@@ -67,6 +67,18 @@ class _Accepted:
     dropped: bool = False
 
 
+@dataclass
+class _Page:
+    """A fetched page that still needs extraction. `text` is the stored snapshot's text."""
+
+    source: dict[str, Any]
+    snapshot_id: int
+    text: str
+    title: str | None  # as reported by the fetch, before falling back to the search result's title
+    published_at: str | None
+    patterns: list[str]  # instruction-like patterns found in the text
+
+
 class ResearchEngine:
     def __init__(
         self, store: Store, llm: LLMClient, search: SearchProvider, fetcher: Fetcher, settings: Settings, *,
@@ -137,13 +149,7 @@ class _Session:
         self._event("session_started", {"budget": self.budget.budget.model_dump(), "model": self.e.llm.model,
                                         "search_provider": self.e.search.name})
         try:
-            self._prepare()
-            self._recheck_stale()
-            self._read_backlog(limit=max(1, self.budget.budget.max_fetched_pages // 3))
-            self._search_phase()
-            self._read_backlog(limit=self.budget.budget.max_fetched_pages)
-            self.work_limits = self.budget.limits_reached()  # measured before wrap-up spends its reserve
-            self._reflect()
+            self._work()
         except SessionCancelled as exc:
             status, stop_reason, error = RunStatus.CANCELLED, "cancelled", str(exc) or None
         except LLMUnavailable as exc:
@@ -157,6 +163,25 @@ class _Session:
         if status is RunStatus.COMPLETED and self.work_limits:
             stop_reason = "budget:" + ",".join(self.work_limits)
         return self._finalize(status, stop_reason, error)
+
+    def _work(self) -> None:
+        """The session's steps in order. Each step is a method so another driver can sequence them."""
+        self._prepare()
+        self._recheck_stale()
+        self._read_backlog(limit=self._early_lead_limit())
+        self._search_phase()
+        self._read_backlog(limit=self.budget.budget.max_fetched_pages)
+        self.work_limits = self.budget.limits_reached()  # measured before wrap-up spends its reserve
+        self._reflect()
+
+    def _early_lead_limit(self) -> int:
+        """Saved leads read before searching: at most a third of the page budget."""
+        return max(1, self.budget.budget.max_fetched_pages // 3)
+
+    def _page_quota(self, index: int, total: int) -> int:
+        """Pages one query may use: the remaining page budget spread across the remaining queries."""
+        pages_left = self.budget.budget.max_fetched_pages - self.budget.fetched_pages
+        return max(1, min(self.settings.fetch_per_query, -(-pages_left // (total - index))))
 
     # ------------------------------------------------------------ plumbing
 
@@ -269,6 +294,16 @@ class _Session:
         assert self.memory is not None
         read = 0
         while self.memory.backlog and read < limit and self.budget.can_fetch():
+            current = self._next_lead()
+            if current is None:
+                break
+            self._process_source(current)
+            read += 1
+
+    def _next_lead(self) -> dict[str, Any] | None:
+        """The next saved lead that is still unread and whose site is under the per-session cap."""
+        assert self.memory is not None
+        while self.memory.backlog:
             source = self.memory.backlog.pop(0)
             current = self.store.get_source(source["id"])
             if current is None or current["status"] not in (SourceStatus.DISCOVERED, SourceStatus.FAILED):
@@ -277,8 +312,8 @@ class _Session:
                 continue
             self.c["backlog_sources_read"] += 1
             self._say(f"reading saved lead: {current['canonical_url']}")
-            self._process_source(current)
-            read += 1
+            return current
+        return None
 
     # --------------------------------------------------------------- search
 
@@ -291,17 +326,19 @@ class _Session:
             if pages_left <= 0 or not self.budget.can_search():
                 break
             # Spread the page budget across the remaining queries so one query cannot use it all.
-            quota = max(1, min(self.settings.fetch_per_query, -(-pages_left // (len(queries) - i))))
+            quota = self._page_quota(i, len(queries))
             picks = self._search_and_triage(planned, quota)
             for source in picks:
                 if not self.budget.can_fetch():
                     break
                 self._process_source(source)
 
-    def _plan(self) -> list[PlannedQuery]:
+    def _plan(self, limit: int | None = None) -> list[PlannedQuery]:
         assert self.memory is not None
         memory = self.memory
         wanted = min(self.settings.queries_per_session, self.budget.budget.max_search_requests)
+        if limit is not None:
+            wanted = max(0, min(wanted, limit))
         open_ids = {q["id"] for q in memory.open_questions}
         tried = list(memory.recent_queries)  # older searches may be run again to look for newer results
         accepted: list[PlannedQuery] = []
@@ -373,6 +410,13 @@ class _Session:
         return accepted
 
     def _search_and_triage(self, planned: PlannedQuery, quota: int) -> list[dict[str, Any]]:
+        candidates = self._search_candidates(planned)
+        if not candidates:
+            return []
+        return self._triage(planned, candidates, quota)
+
+    def _search_candidates(self, planned: PlannedQuery) -> list[dict[str, Any]]:
+        """Run one search and register its results. Returns the results worth judging: new or not yet read."""
         results = self._run_search(planned)
         if not results:
             return []
@@ -406,9 +450,7 @@ class _Session:
             "UPDATE search_attempt SET new_url_count = ?, known_url_count = ? WHERE id = ?",
             (new_urls, known_urls, self._last_attempt_id))
         self._say(f"search '{planned.query}': {len(results)} results, {new_urls} new, {known_urls} already known")
-        if not candidates:
-            return []
-        return self._triage(planned, candidates, quota)
+        return candidates
 
     def _run_search(self, planned: PlannedQuery) -> list:
         for attempt in range(2):
@@ -490,8 +532,17 @@ class _Session:
     # ------------------------------------------------------- read one page
 
     def _process_source(self, source: dict[str, Any], recheck: bool = False) -> None:
-        if not self.budget.can_fetch():
+        page = self._fetch_source(source, recheck)
+        if page is None:
             return
+        extraction = self._extract(page)
+        if extraction is not None:
+            self._verify_and_integrate(page, extraction)
+
+    def _fetch_source(self, source: dict[str, Any], recheck: bool = False) -> _Page | None:
+        """Retrieve and store one page. Returns it only if its content is new and needs extraction."""
+        if not self.budget.can_fetch():
+            return None
         self.budget.note_fetch()
         self.domain_count[source["domain"]] = self.domain_count.get(source["domain"], 0) + 1
         now = iso(self.e.clock())
@@ -502,7 +553,7 @@ class _Session:
         self._checkpoint()
         if not result.ok:
             self._fetch_failed(source, result, recheck, now)
-            return
+            return None
 
         flags = set(source["flags"] or []) - {"transient_failure"} | set(result.flags)
         patterns = scan_for_injection(result.text)
@@ -526,7 +577,7 @@ class _Session:
 
         if previous_hash == content_hash:
             self._confirm_unchanged(source, now)
-            return
+            return None
         duplicate = self.store.one(
             "SELECT id FROM source WHERE watch_id = ? AND content_hash = ? AND id != ? AND status = ?",
             (self.watch_id, content_hash, source["id"], SourceStatus.FETCHED))
@@ -535,14 +586,13 @@ class _Session:
             self.store.update_source(source["id"], flags=sorted(flags | {f"same_content_as:{duplicate['id']}"}))
             self._source_result(source, "duplicate_content", f"same text as source {duplicate['id']}")
             self._say(f"  identical content to an earlier source; skipped ({source['canonical_url']})")
-            return
+            return None
 
         self.c["pages_read"] += 1
-        pre = normalize_with_map(result.text)
         if previous_hash is not None:
             self.c["pages_changed"] += 1
-            self._retire_vanished_claims(source, result.text, pre, now)
-        self._extract_and_integrate(source, snapshot_id, result, pre, patterns)
+            self._retire_vanished_claims(source, result.text, normalize_with_map(result.text), now)
+        return _Page(source, snapshot_id, result.text, result.title, result.published_at, patterns)
 
     def _fetch_failed(self, source: dict[str, Any], result: FetchResult, recheck: bool, now: str) -> None:
         self.c["fetch_failures"] += 1
@@ -621,40 +671,49 @@ class _Session:
                 self.store.update_finding(finding_id, status="STALE", last_changed_run_id=self.run_id, last_changed_at=now)
                 self.store.record_change(self.run_id, self.watch_id, finding_id, ChangeType.STALE, {"note": note})
 
-    def _extract_and_integrate(self, source: dict[str, Any], snapshot_id: int, result: FetchResult,
-                               pre: tuple[str, list[int]], patterns: list[str]) -> None:
-        # The user's standing questions always lead. Open gaps are added as hints, never as a filter:
-        # narrow model-written questions alone made the extractor discard pages that served the objective.
+    def _focus_questions(self) -> list[str]:
+        """Questions shown to the extractor. The user's standing questions always lead; open gaps are
+        added as hints, never as a filter: narrow model-written questions alone made the extractor
+        discard pages that served the objective."""
         standing = list(self.spec.key_questions[:4])
         gaps = [q["text"] for q in (self.memory.questions_for_planner() if self.memory else [])
                 if q["text"] not in standing][:2]
-        focus_questions = standing + gaps
+        return standing + gaps
+
+    def _extract(self, page: _Page) -> Extraction | None:
+        """Ask the model for claims with quotes. Returns None when there is nothing to verify."""
+        source = page.source
         focus = self.focus | token_set(source.get("discovered_via") or "")
-        shown = result.text
-        if patterns:
+        shown = page.text
+        if page.patterns:
             shown, _ = redact_injection(shown)
         shown = select_passages(shown, focus, self.settings.page_chars_per_call)
         extraction: Extraction | None = self._llm("extract", prompts.extract(
-            objective=self.objective, spec=self.spec, today=self.today, focus_questions=focus_questions,
-            title=result.title or source.get("title") or "", domain=source["domain"], published=result.published_at,
+            objective=self.objective, spec=self.spec, today=self.today, focus_questions=self._focus_questions(),
+            title=page.title or source.get("title") or "", domain=source["domain"], published=page.published_at,
             text=shown, max_items=MAX_ITEMS_PER_PAGE, max_claims=MAX_CLAIMS_PER_ITEM), Extraction, 900)
         if extraction is None:
             self.store.update_source(source["id"], flags=sorted(set(source["flags"] or []) | {"extraction_failed"}))
             self._source_result(source, "read", "extraction did not run (budget) or returned unusable output")
-            return
+            return None
         self.store.update_source(source["id"], page_relevance=extraction.relevance)
         if extraction.relevance <= 0 or not extraction.items:
             self._source_result(source, "not_relevant", "the model found nothing relevant to the objective")
             self._say(f"  nothing relevant on the page ({source['canonical_url']})")
-            return
+            return None
+        return extraction
 
+    def _verify_and_integrate(self, page: _Page, extraction: Extraction) -> None:
+        """Check every extracted claim against the stored page text, audit it, and file what survives."""
+        source, snapshot_id = page.source, page.snapshot_id
+        pre = normalize_with_map(page.text)
         staged: list[tuple[ExtractedItem, list[_Accepted]]] = []
         for item in extraction.items[:MAX_ITEMS_PER_PAGE]:
             kept: list[_Accepted] = []
             for claim in item.claims[:MAX_CLAIMS_PER_ITEM]:
                 self.c["claims_extracted"] += 1
-                check = check_claim(claim.text, claim.quote, result.text, pre,
-                                    context=f"{result.title or ''} {source['domain']} {source['canonical_url']}")
+                check = check_claim(claim.text, claim.quote, page.text, pre,
+                                    context=f"{page.title or ''} {source['domain']} {source['canonical_url']}")
                 if not check.accepted:
                     self._store_rejected(source, snapshot_id, claim.text, claim.quote, check.reason or "rejected", check)
                     continue
