@@ -1,0 +1,73 @@
+{
+  "plain": {
+    "kills": 24,
+    "resumed_in_same_session": 24,
+    "same_result_as_uninterrupted": 24,
+    "not_resumable": 0,
+    "not_resumable_detail": []
+  },
+  "langgraph durability=sync": {
+    "kills": 24,
+    "resumed_in_same_session": 24,
+    "same_result_as_uninterrupted": 24,
+    "not_resumable": 0,
+    "not_resumable_detail": []
+  },
+  "langgraph durability=async": {
+    "kills": 24,
+    "resumed_in_same_session": 24,
+    "same_result_as_uninterrupted": 24,
+    "not_resumable": 0,
+    "not_resumable_detail": []
+  },
+  "langgraph durability=exit": {
+    "kills": 24,
+    "resumed_in_same_session": 0,
+    "same_result_as_uninterrupted": 0,
+    "not_resumable": 24,
+    "not_resumable_detail": [
+      {
+        "killed_at_adapter_call": 3,
+        "checkpoints_found": 0,
+        "latest_next": null,
+        "latest_step": null,
+        "error": null
+      },
+      {
+        "killed_at_adapter_call": 9,
+        "checkpoints_found": 0,
+        "latest_next": null,
+        "latest_step": null,
+        "error": null
+      },
+      {
+        "killed_at_adapter_call": 14,
+        "checkpoints_found": 0,
+        "latest_next": null,
+        "latest_step": null,
+        "error": null
+      },
+      {
+        "killed_at_adapter_call": 20,
+        "checkpoints_found": 0,
+        "latest_next": null,
+        "latest_step": null,
+        "error": null
+      },
+      {
+        "killed_at_adapter_call": 3,
+        "checkpoints_found": 0,
+        "latest_next": null,
+        "latest_step": null,
+        "error": null
+      },
+      {
+        "killed_at_adapter_call": 9,
+        "checkpoints_found": 0,
+        "latest_next": null,
+        "latest_step": null,
+        "error": null
+      }
+    ]
+  }
+}

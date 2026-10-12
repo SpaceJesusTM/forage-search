@@ -1,0 +1,20 @@
+{
+  "linear": {
+    "import_ms": 0,
+    "modules_loaded": 637,
+    "python_heap_peak_mb_during_5_sessions": 6.97,
+    "process_peak_rss_mb": 68.1
+  },
+  "langgraph": {
+    "import_ms": 528,
+    "modules_loaded": 1245,
+    "python_heap_peak_mb_during_5_sessions": 6.64,
+    "process_peak_rss_mb": 97.1
+  },
+  "plain": {
+    "import_ms": 4,
+    "modules_loaded": 637,
+    "python_heap_peak_mb_during_5_sessions": 7.0,
+    "process_peak_rss_mb": 68.2
+  }
+}

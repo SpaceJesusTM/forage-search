@@ -258,16 +258,23 @@ def overhead(tmp: Path, repeats: int = 7) -> dict[str, Any]:
             times.append(elapsed / sessions)
             if i == 0:
                 data = harness.settings.data_dir
-                if driver == "langgraph":
+                rows = payload = 0
+                if driver != "linear":
                     steps = sum(len(harness.graph_engine.history(r["id"])) for w in watch_ids for r in harness.app.store.list_runs(w))
-                    harness.graph_engine._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                elif driver == "plain":
-                    steps = sum(len(harness.graph_engine.history(r["id"])) for w in watch_ids for r in harness.app.store.list_runs(w))
-                    harness.graph_engine._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    conn = harness.graph_engine._conn
+                    if driver == "langgraph":
+                        rows, payload = conn.execute(
+                            "SELECT (SELECT COUNT(*) FROM checkpoints) + (SELECT COUNT(*) FROM writes), "
+                            "COALESCE((SELECT SUM(LENGTH(checkpoint) + LENGTH(metadata)) FROM checkpoints), 0) + "
+                            "COALESCE((SELECT SUM(LENGTH(value)) FROM writes), 0)").fetchone()
+                    else:
+                        rows, payload = conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(state)), 0) FROM step_checkpoint").fetchone()
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 harness.app.store.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 sizes = {
                     "sessions": sessions,
                     "research_db_bytes": _file_size(data / "forage.sqlite3"),
+                    "checkpoint_rows_kept": rows, "checkpoint_payload_bytes_kept": payload,
                     "checkpoint_db_bytes": _file_size(data / "langgraph_checkpoints.sqlite3") if driver == "langgraph"
                     else _file_size(data / "step_checkpoints.sqlite3") if driver == "plain" else 0,
                 }
@@ -278,7 +285,7 @@ def overhead(tmp: Path, repeats: int = 7) -> dict[str, Any]:
             "ms_per_session_min": round(1000 * min(times), 2),
             "checkpointed_steps_total": steps,
             **sizes,
-            "checkpoint_bytes_per_session": round(sizes["checkpoint_db_bytes"] / sizes["sessions"]) if sizes.get("sessions") else 0,
+            "checkpoint_payload_bytes_per_session": round(sizes["checkpoint_payload_bytes_kept"] / sizes["sessions"]) if sizes.get("sessions") else 0,
         }
     base = out["variants"]["linear"]["ms_per_session_median"]
     for label, row in out["variants"].items():
@@ -368,7 +375,7 @@ def _child(driver: str) -> None:
 # ----------------------------------------------------- real process death
 
 
-def kill_test(tmp: Path) -> dict[str, Any]:
+def kill_test(tmp: Path, repeats: int = 6) -> dict[str, Any]:
     """Kill a real process (os._exit, no cleanup) in the middle of a session, then resume in a new process."""
     out: dict[str, Any] = {}
     ref = make(tmp, "kill-ref", "linear")
@@ -381,20 +388,29 @@ def kill_test(tmp: Path) -> dict[str, Any]:
     for driver, options in cases:
         label = driver + (f" durability={options['durability']}" if options else "")
         rows = []
-        for kill_at in (3, 9, 14, 20):
-            data = tmp / f"kill-{label.replace(' ', '-').replace('=', '-')}-{kill_at}"
-            args = [sys.executable, "-m", "experiments.langgraph.compare", "_kill_child", driver, json.dumps(options), str(data)]
-            first = subprocess.run(args + ["run", str(kill_at)], capture_output=True, text=True, cwd=ROOT)
-            second = subprocess.run(args + ["resume", "-1"], capture_output=True, text=True, cwd=ROOT)
-            try:
-                result = json.loads(second.stdout.strip().splitlines()[-1])
-            except (IndexError, ValueError):
-                result = {"resumed": False, "error": (second.stderr or second.stdout)[-300:]}
-            result["first_process_exit_code"] = first.returncode
-            if result.get("state") is not None:
-                result["same_as_uninterrupted"] = json.loads(json.dumps(result.pop("state"))) == json.loads(json.dumps(expected))
-            rows.append({"killed_at_adapter_call": kill_at, **result})
-        out[label] = rows
+        for repeat in range(repeats):
+            for kill_at in (3, 9, 14, 20):
+                data = tmp / f"kill-{label.replace(' ', '-').replace('=', '-')}-{kill_at}-{repeat}"
+                args = [sys.executable, "-m", "experiments.langgraph.compare", "_kill_child", driver, json.dumps(options), str(data)]
+                first = subprocess.run(args + ["run", str(kill_at)], capture_output=True, text=True, cwd=ROOT)
+                second = subprocess.run(args + ["resume", "-1"], capture_output=True, text=True, cwd=ROOT)
+                try:
+                    result = json.loads(second.stdout.strip().splitlines()[-1])
+                except (IndexError, ValueError):
+                    result = {"resumed": False, "error": (second.stderr or second.stdout)[-300:]}
+                result["first_process_exit_code"] = first.returncode
+                if result.get("state") is not None:
+                    result["same_as_uninterrupted"] = json.loads(json.dumps(result.pop("state"))) == json.loads(json.dumps(expected))
+                rows.append({"killed_at_adapter_call": kill_at, **result})
+                shutil.rmtree(data, ignore_errors=True)
+        out[label] = {
+            "kills": len(rows),
+            "resumed_in_same_session": sum(1 for r in rows if r.get("resumed")),
+            "same_result_as_uninterrupted": sum(1 for r in rows if r.get("same_as_uninterrupted")),
+            "not_resumable": sum(1 for r in rows if not r.get("resumed")),
+            "not_resumable_detail": [{k: r.get(k) for k in ("killed_at_adapter_call", "checkpoints_found", "latest_next",
+                                                           "latest_step", "error")} for r in rows if not r.get("resumed")][:6],
+        }
     return out
 
 
@@ -409,8 +425,10 @@ def _kill_child(driver: str, options_json: str, data: str, mode: str, kill_at: s
         return
     watch = store.list_watches()[0]
     run = store.list_runs(watch["id"])[-1]
+    history = harness.graph_engine.history(run["id"])
     result: dict[str, Any] = {"run_status_found": run["status"], "can_resume": harness.graph_engine.can_resume(run["id"]),
-                              "checkpoints_found": len(harness.graph_engine.history(run["id"]))}
+                              "checkpoints_found": len(history), "latest_step": history[-1][0] if history else None,
+                              "latest_next": list(history[-1][1]) if history else None}
     if result["can_resume"]:
         outcome = harness.graph_engine.resume(run["id"])
         result.update(resumed=True, final_status=str(outcome.status), sessions=len(store.list_runs(watch["id"])),

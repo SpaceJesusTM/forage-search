@@ -21,6 +21,8 @@ dependencies = [
 [project.optional-dependencies]
 ddgs = ["ddgs>=9.0"]
 dev = ["pytest>=8.0"]
+# EXPERIMENTAL: only for the LangGraph session driver under forage.experimental (see docs/LANGGRAPH_ARCHITECTURE_DECISION.md).
+langgraph = ["langgraph>=1.2,<2", "langgraph-checkpoint-sqlite>=3.1,<4"]
 
 [project.scripts]
 forage = "forage.cli:main"

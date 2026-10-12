@@ -1,0 +1,85 @@
+{
+  "repeats": 7,
+  "variants": {
+    "linear": {
+      "ms_per_session_median": 11.02,
+      "ms_per_session_min": 8.7,
+      "checkpointed_steps_total": 0,
+      "sessions": 5,
+      "research_db_bytes": 438272,
+      "checkpoint_rows_kept": 0,
+      "checkpoint_payload_bytes_kept": 0,
+      "checkpoint_db_bytes": 0,
+      "checkpoint_payload_bytes_per_session": 0,
+      "overhead_ms_per_session_vs_linear": 0.0
+    },
+    "plain": {
+      "ms_per_session_median": 41.81,
+      "ms_per_session_min": 31.98,
+      "checkpointed_steps_total": 133,
+      "sessions": 5,
+      "research_db_bytes": 438272,
+      "checkpoint_rows_kept": 133,
+      "checkpoint_payload_bytes_kept": 282062,
+      "checkpoint_db_bytes": 483328,
+      "checkpoint_payload_bytes_per_session": 56412,
+      "overhead_ms_per_session_vs_linear": 30.79,
+      "steps_per_session": 26.6,
+      "overhead_ms_per_step": 1.158
+    },
+    "langgraph durability=sync": {
+      "ms_per_session_median": 72.22,
+      "ms_per_session_min": 60.14,
+      "checkpointed_steps_total": 138,
+      "sessions": 5,
+      "research_db_bytes": 438272,
+      "checkpoint_rows_kept": 2164,
+      "checkpoint_payload_bytes_kept": 734365,
+      "checkpoint_db_bytes": 1343488,
+      "checkpoint_payload_bytes_per_session": 146873,
+      "overhead_ms_per_session_vs_linear": 61.2,
+      "steps_per_session": 27.6,
+      "overhead_ms_per_step": 2.217
+    },
+    "langgraph durability=async": {
+      "ms_per_session_median": 72.18,
+      "ms_per_session_min": 61.88,
+      "checkpointed_steps_total": 138,
+      "sessions": 5,
+      "research_db_bytes": 438272,
+      "checkpoint_rows_kept": 2164,
+      "checkpoint_payload_bytes_kept": 734253,
+      "checkpoint_db_bytes": 1343488,
+      "checkpoint_payload_bytes_per_session": 146851,
+      "overhead_ms_per_session_vs_linear": 61.16,
+      "steps_per_session": 27.6,
+      "overhead_ms_per_step": 2.216
+    },
+    "langgraph durability=exit": {
+      "ms_per_session_median": 60.71,
+      "ms_per_session_min": 46.89,
+      "checkpointed_steps_total": 5,
+      "sessions": 5,
+      "research_db_bytes": 438272,
+      "checkpoint_rows_kept": 5,
+      "checkpoint_payload_bytes_kept": 26059,
+      "checkpoint_db_bytes": 81920,
+      "checkpoint_payload_bytes_per_session": 5212,
+      "overhead_ms_per_session_vs_linear": 49.69,
+      "steps_per_session": 1.0,
+      "overhead_ms_per_step": 49.69
+    },
+    "langgraph sync, checkpoints deleted after each session": {
+      "ms_per_session_median": 72.12,
+      "ms_per_session_min": 54.31,
+      "checkpointed_steps_total": 0,
+      "sessions": 5,
+      "research_db_bytes": 438272,
+      "checkpoint_rows_kept": 0,
+      "checkpoint_payload_bytes_kept": 0,
+      "checkpoint_db_bytes": 385024,
+      "checkpoint_payload_bytes_per_session": 0,
+      "overhead_ms_per_session_vs_linear": 61.1
+    }
+  }
+}

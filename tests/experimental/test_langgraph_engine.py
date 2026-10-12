@@ -10,14 +10,11 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import importlib.util
+
 import pytest
 
-pytest.importorskip("langgraph")
-pytest.importorskip("langgraph.checkpoint.sqlite")
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from langgraph.types import RetryPolicy  # noqa: E402
 
 from conftest import Harness  # noqa: E402
 from experiments.langgraph.faults import Faults, SimulatedCrash  # noqa: E402
@@ -32,9 +29,15 @@ from forage.types import RunStatus, WatchStatus  # noqa: E402
 DRIVER = "langgraph"
 
 
+HAVE_LANGGRAPH = all(importlib.util.find_spec(name) for name in ("langgraph", "aiosqlite")) and \
+    importlib.util.find_spec("langgraph.checkpoint.sqlite") is not None
+
+
 @pytest.fixture(params=["langgraph", "plain"], autouse=True)
 def driver(request):
     global DRIVER
+    if request.param == "langgraph" and not HAVE_LANGGRAPH:
+        pytest.skip("LangGraph is not installed (pip install 'forage-search[langgraph]')")
     DRIVER = request.param
     return request.param
 
@@ -256,6 +259,8 @@ class Transient(Exception):
 
 def test_automatic_node_retry_does_not_repeat_the_search(tmp_path):
     langgraph_only()
+    from langgraph.types import RetryPolicy
+
     harness = graph_harness(tmp_path, engine_options={
         "retry": {"search": RetryPolicy(max_attempts=3, initial_interval=0.0, jitter=False, retry_on=Transient)}})
     watch_id = harness.watch()

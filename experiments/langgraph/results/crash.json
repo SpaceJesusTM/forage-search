@@ -6,58 +6,58 @@
       "linear": {
         "crash_points": 48,
         "same_as_uninterrupted": 0,
-        "crash_points_losing_verified_claims": 22,
-        "crash_points_with_findings_never_reported": 24,
-        "crash_points_leaving_a_page_stored_but_unread": 22,
+        "crash_points_losing_verified_claims": 0,
+        "crash_points_with_findings_never_reported": 2,
+        "crash_points_leaving_a_page_stored_but_unread": 0,
         "sessions_used_mean": 2,
-        "extra_model_calls_mean": 2.46,
-        "extra_model_calls_max": 4,
+        "extra_model_calls_mean": 3.83,
+        "extra_model_calls_max": 6,
         "extra_searches_mean": 2.04,
         "extra_searches_max": 3,
-        "extra_fetches_mean": 0.21,
+        "extra_fetches_mean": 0.67,
         "extra_fetches_max": 1,
         "worst_points": [
           {
-            "call": "llm:extract",
+            "call": "llm:triage",
             "when": "before",
-            "verified_claims_missing": 3,
+            "verified_claims_missing": 0,
             "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:extract",
+            "call": "llm:triage",
             "when": "after",
-            "verified_claims_missing": 3,
+            "verified_claims_missing": 0,
             "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:support",
+            "call": "llm:plan",
             "when": "before",
-            "verified_claims_missing": 3,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:support",
+            "call": "llm:plan",
             "when": "after",
-            "verified_claims_missing": 3,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:match",
+            "call": "search",
             "when": "before",
-            "verified_claims_missing": 3,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:match",
+            "call": "search",
             "when": "after",
-            "verified_claims_missing": 3,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           }
         ]
       },
@@ -99,59 +99,59 @@
     "drivers": {
       "linear": {
         "crash_points": 36,
-        "same_as_uninterrupted": 4,
-        "crash_points_losing_verified_claims": 16,
-        "crash_points_with_findings_never_reported": 16,
-        "crash_points_leaving_a_page_stored_but_unread": 16,
+        "same_as_uninterrupted": 10,
+        "crash_points_losing_verified_claims": 0,
+        "crash_points_with_findings_never_reported": 0,
+        "crash_points_leaving_a_page_stored_but_unread": 0,
         "sessions_used_mean": 2,
-        "extra_model_calls_mean": 1.11,
-        "extra_model_calls_max": 4,
+        "extra_model_calls_mean": 2.33,
+        "extra_model_calls_max": 5,
         "extra_searches_mean": 0.83,
         "extra_searches_max": 2,
-        "extra_fetches_mean": 0.22,
+        "extra_fetches_mean": 0.67,
         "extra_fetches_max": 1,
         "worst_points": [
           {
-            "call": "llm:extract",
+            "call": "llm:plan",
             "when": "before",
-            "verified_claims_missing": 2,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:extract",
+            "call": "llm:plan",
             "when": "after",
-            "verified_claims_missing": 2,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:support",
+            "call": "search",
             "when": "before",
-            "verified_claims_missing": 2,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:support",
+            "call": "search",
             "when": "after",
-            "verified_claims_missing": 2,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:match",
+            "call": "llm:triage",
             "when": "before",
-            "verified_claims_missing": 2,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           },
           {
-            "call": "llm:match",
+            "call": "llm:triage",
             "when": "after",
-            "verified_claims_missing": 2,
-            "findings_never_reported": 1,
-            "pages_stored_but_never_read": 1
+            "verified_claims_missing": 0,
+            "findings_never_reported": 0,
+            "pages_stored_but_never_read": 0
           }
         ]
       },

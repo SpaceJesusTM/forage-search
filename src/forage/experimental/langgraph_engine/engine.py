@@ -91,7 +91,14 @@ class LangGraphEngine:
         return None
 
     def can_resume(self, run_id: str) -> bool:
-        return bool(self.snapshot(run_id).next)
+        """True while the thread has work left.
+
+        `next` alone is not enough. If the process died after a node finished and its writes were
+        saved, but before the following checkpoint was, the snapshot shows no next node and one task
+        that already has a result; LangGraph applies those pending writes and carries on when invoked.
+        """
+        snapshot = self.snapshot(run_id)
+        return bool(snapshot.next) or any(task.result is not None for task in snapshot.tasks)
 
     # -------------------------------------------------------------- running
 
